@@ -344,10 +344,57 @@ function App() {
     await loadMessages(sessionId)
   }
 
-  const handleDeleteSession = async (sessionId) => {
+  const handleRenameSession = async (sessionId) => {
     const session = sessions.find((item) => item.id === sessionId)
 
-    if (!session || !window.confirm(`删除“${session.title}”及全部消息？`)) {
+    if (!session) {
+      return
+    }
+
+    const nextTitle = window.prompt('重命名会话', session.title)?.trim()
+
+    if (!nextTitle || nextTitle === session.title) {
+      return
+    }
+
+    if (nextTitle.length > 120) {
+      setNotice('会话名称不能超过 120 个字符。')
+      return
+    }
+
+    setNotice('')
+
+    try {
+      const response = await apiRequest(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: nextTitle }),
+      })
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok || !data.session) {
+        throw new Error(data.error || '会话重命名失败，请稍后重试。')
+      }
+
+      setSessions((current) =>
+        current.map((item) =>
+          item.id === data.session.id ? data.session : item,
+        ),
+      )
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '会话重命名失败。')
+    }
+  }
+
+  const handleDeleteSession = async (sessionId) => {
+    const sessionIndex = sessions.findIndex((item) => item.id === sessionId)
+    const session = sessions[sessionIndex]
+
+    if (
+      !session ||
+      !window.confirm(
+        `确定删除会话“${session.title}”吗？\n\n该会话中的全部消息也会永久删除，且无法恢复。`,
+      )
+    ) {
       return
     }
 
@@ -367,8 +414,11 @@ function App() {
       setSessions(remaining)
 
       if (activeId === sessionId) {
-        if (remaining[0]) {
-          await loadMessages(remaining[0].id)
+        const nextSession =
+          remaining[Math.min(sessionIndex, remaining.length - 1)] ?? null
+
+        if (nextSession) {
+          await loadMessages(nextSession.id)
         } else {
           setActiveId(null)
           setMessages([])
@@ -378,7 +428,6 @@ function App() {
       setNotice(error instanceof Error ? error.message : '会话删除失败。')
     }
   }
-
   const handleSend = async (event) => {
     event.preventDefault()
     const text = draft.trim()
@@ -525,16 +574,26 @@ function App() {
                       <span className="conversation-preview">
                         {formatSessionTime(session.updated_at)}
                       </span>
-                    </button>
-                    <button
-                      className="delete-session"
-                      type="button"
-                      onClick={() => handleDeleteSession(session.id)}
-                      aria-label={`删除会话 ${session.title}`}
-                      title="删除会话"
-                    >
-                      ×
-                    </button>
+                    </button>                      <div className="session-actions">
+                        <button
+                          className="session-action rename-session"
+                          type="button"
+                          onClick={() => handleRenameSession(session.id)}
+                          aria-label={`重命名会话 ${session.title}`}
+                          title="重命名会话"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          className="session-action delete-session"
+                          type="button"
+                          onClick={() => handleDeleteSession(session.id)}
+                          aria-label={`删除会话 ${session.title}`}
+                          title="删除会话"
+                        >
+                          ×
+                        </button>
+                      </div>
                   </li>
                 )
               })}

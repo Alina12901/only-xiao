@@ -623,6 +623,63 @@ app.post(
   },
 )
 
+app.patch('/api/sessions/:id', requireUser, async (request, response) => {
+  const sessionId = request.params.id
+
+  if (!isValidUuid(sessionId)) {
+    response.status(400).json({
+      error: '会话地址无效。',
+    })
+    return
+  }
+
+  const title =
+    typeof request.body?.title === 'string' ? request.body.title.trim() : ''
+
+  if (!title) {
+    response.status(400).json({
+      error: '会话名称不能为空。',
+    })
+    return
+  }
+
+  if (title.length > 120) {
+    response.status(400).json({
+      error: '会话名称不能超过 120 个字符。',
+    })
+    return
+  }
+
+  const { data, error } = await request.db
+    .from('sessions')
+    .update({
+      title,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', sessionId)
+    .eq('owner_id', request.user.id)
+    .select('id, title, created_at, updated_at')
+    .maybeSingle()
+
+  if (error) {
+    console.error(`重命名会话失败：${error.code ?? 'unknown'}`)
+    response.status(500).json({
+      error: '会话重命名失败，请稍后重试。',
+    })
+    return
+  }
+
+  if (!data) {
+    response.status(404).json({
+      error: '没有找到这个会话。',
+    })
+    return
+  }
+
+  response.json({
+    session: data,
+  })
+})
 app.delete('/api/sessions/:id', requireUser, async (request, response) => {
   const sessionId = request.params.id
 
