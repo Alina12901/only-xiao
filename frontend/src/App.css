@@ -1115,3 +1115,109 @@
   opacity: 1;
   transform: none;
 }
+
+.message-row.is-pending .message-bubble {
+  opacity: 0.76;
+}
+
+.message-row.is-pending .message-meta::after {
+  content: "正在发送";
+  color: #9aacc0;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(55, 72, 94, 0.26);
+  backdrop-filter: blur(7px);
+}
+
+.rename-dialog {
+  display: flex;
+  width: min(410px, 100%);
+  flex-direction: column;
+  gap: 18px;
+  padding: 27px;
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 92% 5%, rgba(157, 205, 246, 0.32), transparent 34%),
+    rgba(249, 251, 254, 0.97);
+  box-shadow:
+    0 26px 70px rgba(67, 91, 124, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.rename-heading h3 {
+  margin: 0;
+  color: #334b66;
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.rename-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #6a7f96;
+  font-size: 12px;
+}
+
+.rename-field input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  color: #3d536c;
+  border: 1px solid rgba(119, 157, 196, 0.24);
+  border-radius: 13px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.rename-field input:focus {
+  border-color: rgba(104, 157, 207, 0.5);
+  box-shadow: 0 0 0 3px rgba(115, 169, 218, 0.11);
+}
+
+.rename-error {
+  margin: -4px 0 0;
+  color: #965b74;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.modal-actions button {
+  min-width: 82px;
+  min-height: 40px;
+  padding: 0 15px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.modal-cancel {
+  color: #657c94;
+  border: 1px solid rgba(115, 151, 190, 0.2);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.modal-save {
+  color: #2e4c6b;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: linear-gradient(135deg, #9ac8ee, #d9acd0);
+  box-shadow: 0 10px 24px rgba(105, 137, 180, 0.16);
+}
+
+.modal-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

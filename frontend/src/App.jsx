@@ -133,8 +133,13 @@ function App() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isReplying, setIsReplying] = useState(false)
   const [notice, setNotice] = useState('')
+  const [renameSession, setRenameSession] = useState(null)
   const accessTokenRef = useRef('')
+  const [renameDraft, setRenameDraft] = useState('')
+  const activeIdRef = useRef(null)
+  const [renameError, setRenameError] = useState('')
   const messagesEndRef = useRef(null)
+  const [isRenaming, setIsRenaming] = useState(false)
 
   const activeConversation =
     sessions.find((session) => session.id === activeId) ?? null
@@ -273,6 +278,10 @@ function App() {
     })
   }, [messages.length, activeId])
 
+  useEffect(() => {
+    activeIdRef.current = activeId
+  }, [activeId])
+
   const handleLogin = async (event) => {
     event.preventDefault()
     setAuthError('')
@@ -344,28 +353,47 @@ function App() {
     await loadMessages(sessionId)
   }
 
-  const handleRenameSession = async (sessionId) => {
+  const handleRenameSession = (sessionId) => {
     const session = sessions.find((item) => item.id === sessionId)
 
     if (!session) {
       return
     }
 
-    const nextTitle = window.prompt('重命名会话', session.title)?.trim()
+    setRenameSession(session)
+    setRenameDraft(session.title)
+    setRenameError('')
+  }
 
-    if (!nextTitle || nextTitle === session.title) {
+  const handleRenameSubmit = async (event) => {
+    event.preventDefault()
+
+    if (!renameSession) {
+      return
+    }
+
+    const nextTitle = renameDraft.trim()
+
+    if (!nextTitle) {
+      setRenameError('会话名称不能为空。')
       return
     }
 
     if (nextTitle.length > 120) {
-      setNotice('会话名称不能超过 120 个字符。')
+      setRenameError('会话名称不能超过 120 个字符。')
       return
     }
 
-    setNotice('')
+    if (nextTitle === renameSession.title) {
+      setRenameSession(null)
+      return
+    }
+
+    setIsRenaming(true)
+    setRenameError('')
 
     try {
-      const response = await apiRequest(`/api/sessions/${sessionId}`, {
+      const response = await apiRequest(`/api/sessions/${renameSession.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ title: nextTitle }),
       })
@@ -380,11 +408,16 @@ function App() {
           item.id === data.session.id ? data.session : item,
         ),
       )
+      setRenameSession(null)
+      setRenameDraft('')
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : '会话重命名失败。')
+      setRenameError(
+        error instanceof Error ? error.message : '会话重命名失败。',
+      )
+    } finally {
+      setIsRenaming(false)
     }
   }
-
   const handleDeleteSession = async (sessionId) => {
     const sessionIndex = sessions.findIndex((item) => item.id === sessionId)
     const session = sessions[sessionIndex]
@@ -442,6 +475,16 @@ function App() {
     }
 
     const sessionId = activeId
+    const optimisticMessage = {
+      id: `pending-user-${Date.now()}`,
+      session_id: sessionId,
+      role: 'user',
+      content: text,
+      created_at: new Date().toISOString(),
+      pending: true,
+    }
+
+    setMessages((current) => [...current, optimisticMessage])
     setDraft('')
     setNotice('')
     setIsReplying(true)
@@ -458,15 +501,22 @@ function App() {
 
       if (!response.ok) {
         setNotice(data.error || '消息发送失败，请稍后重试。')
-        await loadMessages(sessionId)
+
+        if (activeIdRef.current === sessionId) {
+          await loadMessages(sessionId)
+        }
+
         return
       }
 
-      setMessages((current) => [
-        ...current,
-        data.userMessage,
-        data.assistantMessage,
-      ])
+      if (activeIdRef.current === sessionId) {
+        setMessages((current) => [
+          ...current.filter((message) => message.id !== optimisticMessage.id),
+          data.userMessage,
+          data.assistantMessage,
+        ])
+      }
+
       setSessions((current) => {
         const updated = current.map((session) =>
           session.id === data.session.id ? data.session : session,
@@ -486,12 +536,14 @@ function App() {
       setNotice(
         error instanceof Error ? error.message : '消息发送失败，请稍后重试。',
       )
-      await loadMessages(sessionId)
+
+      if (activeIdRef.current === sessionId) {
+        await loadMessages(sessionId)
+      }
     } finally {
       setIsReplying(false)
     }
   }
-
   const handleComposerKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -651,7 +703,7 @@ function App() {
           ) : messages.length ? (
             messages.map((message) => (
               <article
-                className={`message-row ${message.role}`}
+                  className={`message-row ${message.role}${message.pending ? ' is-pending' : ''}`}
                 key={message.id}
               >
                 <ProfileAvatar
@@ -728,6 +780,64 @@ function App() {
           </p>
         </section>
       </main>
+      {renameSession && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isRenaming) {
+              setRenameSession(null)
+              setRenameError('')
+            }
+          }}
+        >
+          <form className="rename-dialog" onSubmit={handleRenameSubmit}>
+            <div className="rename-heading">
+              <p className="chat-eyebrow">整理会话</p>
+              <h3>重命名会话</h3>
+            </div>
+
+            <label className="rename-field">
+              <span>会话名称</span>
+              <input
+                type="text"
+                value={renameDraft}
+                onChange={(event) => setRenameDraft(event.target.value)}
+                maxLength="120"
+                disabled={isRenaming}
+                autoFocus
+              />
+            </label>
+
+            {renameError && (
+              <p className="rename-error" role="alert">
+                {renameError}
+              </p>
+            )}
+
+            <div className="modal-actions">
+              <button
+                className="modal-cancel"
+                type="button"
+                disabled={isRenaming}
+                onClick={() => {
+                  setRenameSession(null)
+                  setRenameError('')
+                }}
+              >
+                取消
+              </button>
+              <button
+                className="modal-save"
+                type="submit"
+                disabled={!renameDraft.trim() || isRenaming}
+              >
+                {isRenaming ? '保存中' : '保存'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }
