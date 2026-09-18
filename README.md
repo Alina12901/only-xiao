@@ -15,7 +15,7 @@
 - 从供应商拉取模型并选择默认模型
 - 后端加密保存供应商 API Key
 
-当前版本：v0.7.0。详细版本记录见 `CHANGELOG.md`。
+当前版本：v0.7.1。详细版本记录见 `CHANGELOG.md`。
 
 ## 目录位置
 
@@ -61,6 +61,7 @@ G:\xiao
 │  ├─ .env                    本机真实配置，不进入 Git
 │  └─ package.json
 ├─ supabase/migrations/       Supabase 数据库迁移
+├─ SECURITY.md
 ├─ CHANGELOG.md
 └─ README.md
 ```
@@ -274,6 +275,7 @@ npm run build
 
 ## 安全约定
 
+完整安全检查记录见 `SECURITY.md`。
 - 真实 `.env` 不进入 Git。
 - Supabase Secret Key 只放后端。
 - 模型供应商密钥只放后端 `backend/.env` 或加密后的 `provider_credentials`。

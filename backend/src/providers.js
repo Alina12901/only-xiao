@@ -1,6 +1,4 @@
-const gatewayBaseUrl = (
-  process.env.MODEL_BASE_URL?.trim() || 'https://emtf.aipm9527.site'
-).replace(/\/+$/, '')
+const gatewayBaseUrl = (process.env.MODEL_BASE_URL?.trim() ?? '').replace(/\/+$/, '')
 
 const officialProviders = {
   gateway: {

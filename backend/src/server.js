@@ -295,6 +295,16 @@ async function validateCustomBaseUrl(rawBaseUrl) {
   url.pathname = url.pathname.replace(/\/+$/, '')
   return url.toString().replace(/\/+$/, '')
 }
+async function normalizeCredentialRecord(record) {
+  if (!record || record.provider !== 'custom') {
+    return record
+  }
+
+  return {
+    ...record,
+    base_url: await validateCustomBaseUrl(record.base_url),
+  }
+}
 async function getOwnedSession(client, sessionId, ownerId) {
   const { data, error } = await client
     .from('sessions')
@@ -834,7 +844,7 @@ app.get(
         return
       }
 
-      credentialRecord = result.record
+      credentialRecord = await normalizeCredentialRecord(result.record)
       apiKey = result.credential || ''
     } else {
       const provider = getProviderDefinition(providerId)
@@ -1036,7 +1046,7 @@ app.patch('/api/settings', requireUser, async (request, response) => {
       return
     }
 
-    credentialRecord = credentialResult.record
+    credentialRecord = await normalizeCredentialRecord(credentialResult.record)
     providerApiKey = credentialResult.credential || ''
   }
 
@@ -1340,7 +1350,7 @@ const message =
         return
       }
 
-      credentialRecord = credentialResult.record
+      credentialRecord = await normalizeCredentialRecord(credentialResult.record)
       providerApiKey = credentialResult.credential || ''
     }
 
