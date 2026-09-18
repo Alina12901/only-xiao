@@ -2,7 +2,7 @@ const gatewayBaseUrl = (
   process.env.MODEL_BASE_URL?.trim() || 'https://emtf.aipm9527.site'
 ).replace(/\/+$/, '')
 
-const providers = {
+const officialProviders = {
   gateway: {
     id: 'gateway',
     label: '森月居兼容网关',
@@ -47,16 +47,52 @@ const providers = {
   },
 }
 
-export function getProviderCatalog() {
-  return Object.values(providers).map((provider) => ({
-    id: provider.id,
-    label: provider.label,
-    credentialSource: provider.credentialSource,
-  }))
+function normalizeCustomBaseUrl(baseUrl) {
+  const value = baseUrl.trim().replace(/\/+$/, '')
+  return value.endsWith('/v1') ? value : `${value}/v1`
 }
 
-export function getProviderDefinition(providerId) {
-  return providers[providerId] ?? null
+function createCustomProvider(record) {
+  if (!record?.base_url || !record?.adapter) {
+    return null
+  }
+
+  const baseUrl = normalizeCustomBaseUrl(record.base_url)
+  const isAnthropic = record.adapter === 'anthropic-messages'
+
+  return {
+    id: 'custom',
+    label: record.label || '自定义第三方 API',
+    credentialSource: 'stored',
+    adapter: record.adapter,
+    baseUrl,
+    modelsPath: '/models',
+    chatPath: isAnthropic ? '/messages' : '/chat/completions',
+    auth: isAnthropic ? 'anthropic' : 'bearer',
+  }
+}
+
+export function getProviderCatalog() {
+  return [
+    ...Object.values(officialProviders).map((provider) => ({
+      id: provider.id,
+      label: provider.label,
+      credentialSource: provider.credentialSource,
+    })),
+    {
+      id: 'custom',
+      label: '自定义第三方 API',
+      credentialSource: 'stored',
+    },
+  ]
+}
+
+export function getProviderDefinition(providerId, credentialRecord = null) {
+  if (providerId === 'custom') {
+    return createCustomProvider(credentialRecord)
+  }
+
+  return officialProviders[providerId] ?? null
 }
 
 function createHeaders(provider, apiKey) {
@@ -100,8 +136,12 @@ function parseAnthropicModels(data) {
     .filter((model) => model.id)
 }
 
-export async function listProviderModels(providerId, apiKey) {
-  const provider = getProviderDefinition(providerId)
+export async function listProviderModels(
+  providerId,
+  apiKey,
+  credentialRecord = null,
+) {
+  const provider = getProviderDefinition(providerId, credentialRecord)
 
   if (!provider || !apiKey) {
     throw new Error('供应商或凭据无效')
@@ -110,6 +150,7 @@ export async function listProviderModels(providerId, apiKey) {
   const response = await fetch(createUrl(provider, provider.modelsPath), {
     method: 'GET',
     headers: createHeaders(provider, apiKey),
+    redirect: 'error',
     signal: AbortSignal.timeout(30000),
   })
 
@@ -119,7 +160,7 @@ export async function listProviderModels(providerId, apiKey) {
 
   const data = await response.json()
   const models =
-    provider.id === 'anthropic'
+    provider.adapter === 'anthropic-messages'
       ? parseAnthropicModels(data)
       : parseOpenAiModels(data)
 
@@ -160,6 +201,7 @@ function parseAnthropicReply(data) {
 
 export async function requestProviderReply({
   providerId,
+  credentialRecord,
   apiKey,
   modelName,
   systemPrompt,
@@ -167,7 +209,7 @@ export async function requestProviderReply({
   maxReplyTokens,
   temperature,
 }) {
-  const provider = getProviderDefinition(providerId)
+  const provider = getProviderDefinition(providerId, credentialRecord)
 
   if (!provider || !apiKey || !modelName) {
     throw new Error('模型配置不完整')
@@ -219,6 +261,7 @@ export async function requestProviderReply({
     method: 'POST',
     headers: createHeaders(provider, apiKey),
     body: JSON.stringify(body),
+    redirect: 'error',
     signal: AbortSignal.timeout(60000),
   })
 
@@ -234,8 +277,12 @@ export async function requestProviderReply({
   }
 
   if (provider.adapter === 'anthropic-messages') {
-    return parseAnthropicReply(data)
+    return parseAnthropicMessagesReply(data)
   }
 
   return parseOpenAiChatReply(data)
+}
+
+function parseAnthropicMessagesReply(data) {
+  return parseAnthropicReply(data)
 }

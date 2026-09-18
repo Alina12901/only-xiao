@@ -2,7 +2,7 @@
 
 「森月居」是一个安静、清冷的私人 AI 聊天应用。AI 的名字是「枭」。
 
-当前版本：v0.6.0，已经加入官方模型供应商适配与加密密钥存储。
+当前版本：v0.7.0，已经加入可配置的第三方 API 地址、密钥和模型拉取。
 
 版本范围记录见 `CHANGELOG.md`。
 
@@ -17,6 +17,8 @@
 - 设置页可修改系统提示词、默认模型、最大回复长度和温度
 - 支持 OpenAI、Anthropic、DeepSeek 官方 API
 - 支持输入供应商 API Key、测试连接并拉取模型列表
+- 支持一个可随时重配的第三方 API 地址
+- 第三方 API 地址只允许 HTTPS 公网地址
 - 供应商 API Key 加密后保存，前端不会回显
 - 会话和消息均由后端读写
 - 应用打开时加载会话列表
@@ -70,7 +72,8 @@
 │  └─ migrations/
 │     ├─ 202609180001_create_sessions_and_messages.sql
 │     ├─ 202609180002_create_settings.sql
-│     └─ 202609180003_add_multi_provider.sql
+│     ├─ 202609180003_add_multi_provider.sql
+│     └─ 202609180004_add_custom_provider_fields.sql
 ├─ .gitignore
 ├─ CHANGELOG.md
 └─ README.md
@@ -94,7 +97,7 @@
 
 ### `provider_credentials`
 
-保存用户输入的官方供应商 API Key，只存加密结果、随机向量和校验值。前端不能读取完整 Key。
+保存用户输入的官方或自定义供应商配置，包括加密后的 API Key、随机向量、校验值，以及自定义接口地址和适配器类型。前端不能读取完整 Key。
 
 ## Supabase 首次设置
 
@@ -110,6 +113,7 @@
 G:\xiao\supabase\migrations\202609180001_create_sessions_and_messages.sql
 G:\xiao\supabase\migrations\202609180002_create_settings.sql
 G:\xiao\supabase\migrations\202609180003_add_multi_provider.sql
+G:\xiao\supabase\migrations\202609180004_add_custom_provider_fields.sql
 ```
 
 迁移会创建：

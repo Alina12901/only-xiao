@@ -126,6 +126,8 @@ function SettingsPanel({
   isPersisted,
   isSaving,
   message,
+  customProviderForm,
+  onCustomProviderChange,
   providerApiKey,
   providerMessage,
   providerModels,
@@ -195,6 +197,62 @@ function SettingsPanel({
                 <small>供应商地址由后端维护，前端不能填写任意地址。</small>
               </label>
 
+              {form.provider === 'custom' && (
+                <div className="custom-provider-fields">
+                  <label className="settings-field">
+                    <span>显示名称</span>
+                    <input
+                      type="text"
+                      value={customProviderForm.label}
+                      onChange={(event) =>
+                        onCustomProviderChange((current) => ({
+                          ...current,
+                          label: event.target.value,
+                        }))
+                      }
+                      disabled={isConnectingProvider}
+                    />
+                  </label>
+
+                  <label className="settings-field">
+                    <span>接口格式</span>
+                    <select
+                      value={customProviderForm.adapter}
+                      onChange={(event) =>
+                        onCustomProviderChange((current) => ({
+                          ...current,
+                          adapter: event.target.value,
+                        }))
+                      }
+                      disabled={isConnectingProvider}
+                    >
+                      <option value="openai-chat">
+                        OpenAI Chat Completions 兼容
+                      </option>
+                      <option value="anthropic-messages">
+                        Anthropic Messages 兼容
+                      </option>
+                    </select>
+                  </label>
+
+                  <label className="settings-field">
+                    <span>接口基础地址</span>
+                    <input
+                      type="url"
+                      value={customProviderForm.baseUrl}
+                      onChange={(event) =>
+                        onCustomProviderChange((current) => ({
+                          ...current,
+                          baseUrl: event.target.value,
+                        }))
+                      }
+                      placeholder="https://example.com"
+                      disabled={isConnectingProvider}
+                    />
+                    <small>只允许 HTTPS 公网地址，地址会加密保存。</small>
+                  </label>
+                </div>
+              )}
               {selectedProvider?.credentialSource === 'stored' &&
                 !selectedProvider.connected && (
                   <div className="provider-connect">
@@ -343,6 +401,11 @@ function App() {
   const [providerApiKey, setProviderApiKey] = useState('')
   const [isConnectingProvider, setIsConnectingProvider] = useState(false)
   const [providerMessage, setProviderMessage] = useState('')
+  const [customProviderForm, setCustomProviderForm] = useState({
+    label: '自定义第三方 API',
+    baseUrl: '',
+    adapter: 'openai-chat',
+  })
   const [authError, setAuthError] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -591,6 +654,14 @@ function App() {
 
     const provider = providers.find((item) => item.id === providerId)
 
+    if (providerId === 'custom' && provider) {
+      setCustomProviderForm({
+        label: provider.label || '自定义第三方 API',
+        baseUrl: provider.baseUrl || '',
+        adapter: provider.adapter || 'openai-chat',
+      })
+    }
+
     if (provider?.connected) {
       await loadProviderModels(providerId)
     }
@@ -599,12 +670,16 @@ function App() {
   const handleConnectProvider = async () => {
     const providerId = settingsForm.provider
     const apiKey = providerApiKey.trim()
+    const isCustom = providerId === 'custom'
 
     if (
       !providers.find((provider) => provider.id === providerId) ||
-      !apiKey
+      !apiKey ||
+      (isCustom &&
+        (!customProviderForm.label.trim() ||
+          !customProviderForm.baseUrl.trim()))
     ) {
-      setProviderMessage('请选择供应商并填写 API Key。')
+      setProviderMessage('请填写完整的供应商连接信息。')
       return
     }
 
@@ -613,10 +688,21 @@ function App() {
 
     try {
       const response = await apiRequest(
-        `/api/providers/${providerId}/connect`,
+        isCustom
+          ? '/api/providers/custom/connect'
+          : `/api/providers/${providerId}/connect`,
         {
           method: 'POST',
-          body: JSON.stringify({ apiKey }),
+          body: JSON.stringify(
+            isCustom
+              ? {
+                  apiKey,
+                  label: customProviderForm.label.trim(),
+                  baseUrl: customProviderForm.baseUrl.trim(),
+                  adapter: customProviderForm.adapter,
+                }
+              : { apiKey },
+          ),
         },
       )
       const data = await response.json().catch(() => ({}))
@@ -632,7 +718,11 @@ function App() {
       setProviders((current) =>
         current.map((provider) =>
           provider.id === providerId
-            ? { ...provider, connected: true }
+            ? {
+                ...provider,
+                ...(data.provider ?? {}),
+                connected: true,
+              }
             : provider,
         ),
       )
@@ -648,7 +738,6 @@ function App() {
       setIsConnectingProvider(false)
     }
   }
-
   const handleDisconnectProvider = async () => {
     const providerId = settingsForm.provider
 
@@ -1194,6 +1283,8 @@ function App() {
           isPersisted={isSettingsPersisted}
           isSaving={isSavingSettings}
           message={settingsMessage}
+          customProviderForm={customProviderForm}
+          onCustomProviderChange={setCustomProviderForm}
           providerApiKey={providerApiKey}
           providerMessage={providerMessage}
           providerModels={providerModels}

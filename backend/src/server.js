@@ -1,4 +1,6 @@
+import { lookup } from 'node:dns/promises'
 import { readFileSync } from 'node:fs'
+import { isIP } from 'node:net'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
@@ -6,7 +8,7 @@ import {
   deleteProviderCredential,
   getProviderCredential,
   isCredentialEncryptionConfigured,
-  listConnectedOfficialProviders,
+  listStoredProviderRecords,
   saveProviderCredential,
 } from './credentials.js'
 import {
@@ -202,6 +204,97 @@ function isValidUuid(value) {
   )
 }
 
+function isPrivateIpv4(address) {
+  const parts = address.split('.').map(Number)
+
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) {
+    return true
+  }
+
+  const [first, second] = parts
+  return (
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    (first === 198 && (second === 18 || second === 19)) ||
+    first >= 224
+  )
+}
+
+function isPrivateAddress(address) {
+  const normalized = address.toLowerCase()
+  const family = isIP(normalized)
+
+  if (family === 4) {
+    return isPrivateIpv4(normalized)
+  }
+
+  if (family === 6) {
+    if (
+      normalized === '::' ||
+      normalized === '::1' ||
+      normalized.startsWith('fc') ||
+      normalized.startsWith('fd') ||
+      normalized.startsWith('fe8') ||
+      normalized.startsWith('fe9') ||
+      normalized.startsWith('fea') ||
+      normalized.startsWith('feb')
+    ) {
+      return true
+    }
+
+    if (normalized.startsWith('::ffff:')) {
+      return isPrivateIpv4(normalized.slice('::ffff:'.length))
+    }
+
+    return false
+  }
+
+  return true
+}
+
+async function validateCustomBaseUrl(rawBaseUrl) {
+  let url
+
+  try {
+    url = new URL(rawBaseUrl)
+  } catch (_error) {
+    throw new Error('接口地址格式不正确')
+  }
+
+  if (url.protocol !== 'https:') {
+    throw new Error('自定义接口地址必须使用 HTTPS')
+  }
+
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error('接口地址不能包含账号、查询参数或片段')
+  }
+
+  const hostname = url.hostname.toLowerCase()
+
+  if (
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.local')
+  ) {
+    throw new Error('接口地址不能指向本机或局域网')
+  }
+
+  const addresses = isIP(hostname)
+    ? [{ address: hostname }]
+    : await lookup(hostname, { all: true })
+
+  if (!addresses.length || addresses.some((item) => isPrivateAddress(item.address))) {
+    throw new Error('接口地址不能指向内网或保留地址')
+  }
+
+  url.pathname = url.pathname.replace(/\/+$/, '')
+  return url.toString().replace(/\/+$/, '')
+}
 async function getOwnedSession(client, sessionId, ownerId) {
   const { data, error } = await client
     .from('sessions')
@@ -465,12 +558,12 @@ app.post('/api/auth/logout', (_request, response) => {
 
 app.get('/api/providers', requireUser, async (request, response) => {
   const catalog = getProviderCatalog()
-  let connectedProviders = new Set()
+  let storedRecords = []
 
   if (
     catalog.some((provider) => provider.credentialSource === 'stored')
   ) {
-    const result = await listConnectedOfficialProviders(
+    const result = await listStoredProviderRecords(
       request.db,
       request.user.id,
     )
@@ -483,22 +576,159 @@ app.get('/api/providers', requireUser, async (request, response) => {
       return
     }
 
-    connectedProviders = result.providers ?? new Set()
+    storedRecords = result.records ?? []
   }
 
+  const customRecord = storedRecords.find(
+    (record) => record.provider === 'custom',
+  )
+
   response.json({
-    providers: catalog.map((provider) => ({
-      id: provider.id,
-      label: provider.label,
-      credentialSource: provider.credentialSource,
-      connected:
+    providers: catalog.map((provider) => {
+      const connected =
         provider.credentialSource === 'environment'
           ? Boolean(modelApiKey && modelEndpoint)
-          : connectedProviders.has(provider.id),
-    })),
+          : storedRecords.some((record) => record.provider === provider.id)
+
+      if (provider.id === 'custom') {
+        return {
+          ...provider,
+          label: customRecord?.label || provider.label,
+          connected,
+          baseUrl: customRecord?.base_url || '',
+          adapter: customRecord?.adapter || '',
+        }
+      }
+
+      return {
+        ...provider,
+        connected,
+      }
+    }),
   })
 })
 
+app.post(
+  '/api/providers/custom/connect',
+  requireUser,
+  async (request, response) => {
+    if (!isCredentialEncryptionConfigured()) {
+      response.status(503).json({
+        error: '后端凭据加密尚未配置。',
+      })
+      return
+    }
+
+    const label =
+      typeof request.body?.label === 'string'
+        ? request.body.label.trim()
+        : '自定义第三方 API'
+    const rawBaseUrl =
+      typeof request.body?.baseUrl === 'string'
+        ? request.body.baseUrl.trim()
+        : ''
+    const adapter =
+      typeof request.body?.adapter === 'string'
+        ? request.body.adapter.trim()
+        : ''
+    const apiKey =
+      typeof request.body?.apiKey === 'string'
+        ? request.body.apiKey.trim()
+        : ''
+
+    if (!label || label.length > 80) {
+      response.status(400).json({
+        error: '自定义供应商名称必须为 1 到 80 个字符。',
+      })
+      return
+    }
+
+    if (!['openai-chat', 'anthropic-messages'].includes(adapter)) {
+      response.status(400).json({
+        error: '请选择支持的接口格式。',
+      })
+      return
+    }
+
+    if (!apiKey) {
+      response.status(400).json({
+        error: '请输入第三方 API Key。',
+      })
+      return
+    }
+
+    let baseUrl = ''
+
+    try {
+      baseUrl = await validateCustomBaseUrl(rawBaseUrl)
+    } catch (error) {
+      response.status(400).json({
+        error:
+          error instanceof Error ? error.message : '接口地址验证失败。',
+      })
+      return
+    }
+
+    const credentialRecord = {
+      provider: 'custom',
+      provider_type: 'custom',
+      label,
+      base_url: baseUrl,
+      adapter,
+    }
+    let models = []
+
+    try {
+      models = await listProviderModels('custom', apiKey, credentialRecord)
+    } catch (_error) {
+      response.status(502).json({
+        error: '连接失败，请检查地址、接口格式和 API Key。',
+      })
+      return
+    }
+
+    const { error } = await saveProviderCredential(
+      request.db,
+      request.user.id,
+      'custom',
+      apiKey,
+      {
+        providerType: 'custom',
+        label,
+        baseUrl,
+        adapter,
+      },
+    )
+
+    if (error) {
+      if (isMissingProviderCredentialsTable(error)) {
+        response.status(503).json({
+          error: '供应商凭据表尚未创建，请先执行数据库迁移。',
+        })
+        return
+      }
+
+      console.error(`保存自定义供应商失败：${error.code ?? 'unknown'}`)
+      response.status(500).json({
+        error: '连接成功，但自定义供应商配置没有保存成功。',
+      })
+      return
+    }
+
+    response.json({
+      provider: {
+        id: 'custom',
+        label,
+        credentialSource: 'stored',
+        connected: true,
+        baseUrl,
+        adapter,
+      },
+      models,
+      message: '连接成功，已安全保存地址和 API Key。',
+    })
+  },
+)
 app.post(
   '/api/providers/:provider/connect',
   requireUser,
@@ -579,22 +809,15 @@ app.get(
   '/api/providers/:provider/models',
   requireUser,
   async (request, response) => {
-    const provider = getProviderDefinition(request.params.provider)
-
-    if (!provider) {
-      response.status(400).json({
-        error: '不支持这个模型供应商。',
-      })
-      return
-    }
-
+    const providerId = request.params.provider
+    let credentialRecord = null
     let apiKey = modelApiKey
 
-    if (provider.credentialSource === 'stored') {
+    if (providerId === 'custom') {
       const result = await getProviderCredential(
         request.db,
         request.user.id,
-        provider.id,
+        'custom',
       )
 
       if (result.error) {
@@ -606,12 +829,56 @@ app.get(
         }
 
         response.status(500).json({
-          error: '供应商凭据暂时无法读取。',
+          error: '自定义供应商配置暂时无法读取。',
         })
         return
       }
 
+      credentialRecord = result.record
       apiKey = result.credential || ''
+    } else {
+      const provider = getProviderDefinition(providerId)
+
+      if (!provider) {
+        response.status(400).json({
+          error: '不支持这个模型供应商。',
+        })
+        return
+      }
+
+      if (provider.credentialSource === 'stored') {
+        const result = await getProviderCredential(
+          request.db,
+          request.user.id,
+          provider.id,
+        )
+
+        if (result.error) {
+          if (isMissingProviderCredentialsTable(result.error)) {
+            response.status(503).json({
+              error: '供应商凭据表尚未创建，请先执行数据库迁移。',
+            })
+            return
+          }
+
+          response.status(500).json({
+            error: '供应商凭据暂时无法读取。',
+          })
+          return
+        }
+
+        credentialRecord = result.record
+        apiKey = result.credential || ''
+      }
+    }
+
+    const provider = getProviderDefinition(providerId, credentialRecord)
+
+    if (!provider) {
+      response.status(400).json({
+        error: '请先完成自定义供应商连接。',
+      })
+      return
     }
 
     if (!apiKey) {
@@ -622,7 +889,11 @@ app.get(
     }
 
     try {
-      const models = await listProviderModels(provider.id, apiKey)
+      const models = await listProviderModels(
+        provider.id,
+        apiKey,
+        credentialRecord,
+      )
       response.json({ models })
     } catch (_error) {
       response.status(502).json({
@@ -631,7 +902,6 @@ app.get(
     }
   },
 )
-
 app.delete(
   '/api/providers/:provider',
   requireUser,
@@ -747,11 +1017,34 @@ app.patch('/api/settings', requireUser, async (request, response) => {
     return
   }
 
-  const providerDefinition = getProviderDefinition(provider)
+  let providerApiKey = modelApiKey
+  let credentialRecord = null
+  const staticProvider = getProviderDefinition(provider)
+
+  if (provider === 'custom' || staticProvider?.credentialSource === 'stored') {
+    const credentialResult = await getProviderCredential(
+      request.db,
+      request.user.id,
+      provider,
+    )
+
+    if (credentialResult.error) {
+      console.error('读取供应商凭据失败')
+      response.status(500).json({
+        error: '供应商凭据暂时无法读取，请稍后重试。',
+      })
+      return
+    }
+
+    credentialRecord = credentialResult.record
+    providerApiKey = credentialResult.credential || ''
+  }
+
+  const providerDefinition = getProviderDefinition(provider, credentialRecord)
 
   if (!providerDefinition) {
     response.status(400).json({
-      error: '不支持所选模型供应商。',
+      error: '不支持所选模型供应商，或自定义供应商尚未连接。',
     })
     return
   }
@@ -770,26 +1063,6 @@ app.patch('/api/settings', requireUser, async (request, response) => {
     return
   }
 
-  let providerApiKey = modelApiKey
-
-  if (providerDefinition.credentialSource === 'stored') {
-    const credentialResult = await getProviderCredential(
-      request.db,
-      request.user.id,
-      provider,
-    )
-
-    if (credentialResult.error) {
-      console.error('读取供应商凭据失败')
-      response.status(500).json({
-        error: '供应商凭据暂时无法读取，请稍后重试。',
-      })
-      return
-    }
-
-    providerApiKey = credentialResult.credential || ''
-  }
-
   if (!providerApiKey) {
     response.status(400).json({
       error: '请先在设置页连接所选模型供应商。',
@@ -800,7 +1073,11 @@ app.patch('/api/settings', requireUser, async (request, response) => {
   let availableModels = []
 
   try {
-    availableModels = await listProviderModels(provider.id, providerApiKey)
+    availableModels = await listProviderModels(
+      provider,
+      providerApiKey,
+      credentialRecord,
+    )
   } catch (_error) {
     response.status(502).json({
       error: '无法读取该供应商的模型列表，请检查 API Key。',
@@ -1043,23 +1320,16 @@ const message =
       return
     }
 
-    const provider = getProviderDefinition(settings.provider || 'gateway')
-
-    if (!provider) {
-      response.status(400).json({
-        error: '当前设置中的模型供应商不受支持。',
-        code: 'PROVIDER_NOT_ALLOWED',
-      })
-      return
-    }
-
+    const providerId = settings.provider || 'gateway'
+    let credentialRecord = null
+    const staticProvider = getProviderDefinition(providerId)
     let providerApiKey = modelApiKey
 
-    if (provider.credentialSource === 'stored') {
+    if (providerId === 'custom' || staticProvider?.credentialSource === 'stored') {
       const credentialResult = await getProviderCredential(
         request.db,
         request.user.id,
-        provider.id,
+        providerId,
       )
 
       if (credentialResult.error) {
@@ -1070,7 +1340,18 @@ const message =
         return
       }
 
+      credentialRecord = credentialResult.record
       providerApiKey = credentialResult.credential || ''
+    }
+
+    const provider = getProviderDefinition(providerId, credentialRecord)
+
+    if (!provider) {
+      response.status(400).json({
+        error: '当前设置中的模型供应商不受支持，或自定义供应商尚未连接。',
+        code: 'PROVIDER_NOT_ALLOWED',
+      })
+      return
     }
 
     if (!providerApiKey) {
@@ -1085,6 +1366,7 @@ const message =
 
     try {
       reply = await requestProviderReply({
+        credentialRecord,
         providerId: provider.id,
         apiKey: providerApiKey,
         modelName: settings.modelName,

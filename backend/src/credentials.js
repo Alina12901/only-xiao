@@ -59,7 +59,9 @@ export function decryptSecret(record) {
 export async function getProviderCredential(client, ownerId, provider) {
   const { data, error } = await client
     .from('provider_credentials')
-    .select('encrypted_key, key_iv, key_tag')
+    .select(
+      'provider, provider_type, label, base_url, adapter, encrypted_key, key_iv, key_tag, updated_at',
+    )
     .eq('owner_id', ownerId)
     .eq('provider', provider)
     .maybeSingle()
@@ -69,11 +71,14 @@ export async function getProviderCredential(client, ownerId, provider) {
   }
 
   if (!data) {
-    return { credential: null }
+    return { credential: null, record: null }
   }
 
   try {
-    return { credential: decryptSecret(data) }
+    return {
+      credential: decryptSecret(data),
+      record: data,
+    }
   } catch (_error) {
     return { error: new Error('凭据解密失败') }
   }
@@ -84,12 +89,17 @@ export async function saveProviderCredential(
   ownerId,
   provider,
   apiKey,
+  metadata = {},
 ) {
   const encrypted = encryptSecret(apiKey)
   const { error } = await client.from('provider_credentials').upsert(
     {
       owner_id: ownerId,
       provider,
+      provider_type: metadata.providerType || 'official',
+      label: metadata.label || null,
+      base_url: metadata.baseUrl || null,
+      adapter: metadata.adapter || null,
       encrypted_key: encrypted.encryptedKey,
       key_iv: encrypted.keyIv,
       key_tag: encrypted.keyTag,
@@ -113,10 +123,10 @@ export async function deleteProviderCredential(client, ownerId, provider) {
   return { error }
 }
 
-export async function listConnectedOfficialProviders(client, ownerId) {
+export async function listStoredProviderRecords(client, ownerId) {
   const { data, error } = await client
     .from('provider_credentials')
-    .select('provider')
+    .select('provider, provider_type, label, base_url, adapter, updated_at')
     .eq('owner_id', ownerId)
 
   if (error) {
@@ -124,6 +134,6 @@ export async function listConnectedOfficialProviders(client, ownerId) {
   }
 
   return {
-    providers: new Set((data ?? []).map((row) => row.provider)),
+    records: data ?? [],
   }
 }
