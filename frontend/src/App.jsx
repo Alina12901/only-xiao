@@ -825,6 +825,7 @@ function App() {
       const response = await apiRequest('/api/settings', {
         method: 'PATCH',
         body: JSON.stringify({
+          provider: settingsForm.provider,
           systemPrompt: settingsForm.systemPrompt.trim(),
           modelName: settingsForm.modelName.trim(),
           maxReplyTokens,
