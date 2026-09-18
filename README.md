@@ -2,7 +2,7 @@
 
 「森月居」是一个安静、清冷的私人 AI 聊天应用。AI 的名字是「枭」。
 
-当前版本：v0.3.0，已接入 OpenAI 兼容模型接口的最小单次问答链路。真实模型配置需要由使用者本人填写在 `backend/.env` 中。
+当前版本：v0.4.0，已经接入 Supabase 会话与消息持久化。
 
 版本范围记录见 `CHANGELOG.md`。
 
@@ -12,26 +12,24 @@
 
 - React + Vite 前端
 - Node.js + Express 后端
-- 会话侧边栏、消息区、输入框和发送按钮
-- 浅灰蓝与蓝粉渐变视觉
-- AI 头像预留自定义入口
-- 「森月居」标题优先使用 Huiwen-MinchoGBK 字体
-- `GET /api/health` 健康检查接口
-- `POST /api/chat` 单次聊天接口
-- 后端读取环境变量并调用 OpenAI 兼容的 Claude 接口
-- 通过完整模型 ID 选择 Claude Thinking 模型
-- 每次只发送当前这一句话
-- 后端只返回一次文本回复
+- 单用户 Supabase Auth 登录
+- `sessions` 与 `messages` 两张业务表
+- 会话和消息均由后端读写
+- 新建会话、加载历史、发送消息和删除会话
+- Supabase RLS 所有者隔离
+- 前端只在内存中保存访问令牌
+- 后端 API Key 与 Supabase Secret Key 不进入前端
+- Claude 单次问答
+- 最大回复长度限制
 
 明确不包含：
 
-- 数据库
-- 长期记忆
-- 多轮上下文
+- 记忆压缩
+- 长期记忆摘要
+- 设置表
 - 多模型切换
-- 用户登录或账号系统
+- 多用户注册
 - 云端部署
-- 前端保存 API Key
 
 ## 项目结构
 
@@ -39,7 +37,7 @@
 森月居/
 ├─ frontend/                 React + Vite 前端
 │  ├─ src/
-│  │  ├─ App.jsx             页面与单次问答逻辑
+│  │  ├─ App.jsx             登录、会话、消息和问答逻辑
 │  │  ├─ App.css             页面视觉样式
 │  │  ├─ index.css           全局基础样式
 │  │  └─ main.jsx            前端入口
@@ -47,71 +45,106 @@
 │  ├─ package.json
 │  └─ vite.config.js
 ├─ backend/                  Node.js + Express 后端
-│  ├─ src/server.js          聊天接口与健康检查
-│  ├─ .env.example           环境变量模板，不含真实值
-│  ├─ .env                   本机真实配置，不进入 Git
+│  ├─ src/server.js          认证、聊天和持久化接口
 │  ├─ config/
 │  │  └─ system-prompt.txt   仅后端读取的系统提示词
+│  ├─ .env.example           环境变量模板，不含真实值
+│  ├─ .env                   本机真实配置，不进入 Git
 │  └─ package.json
+├─ supabase/
+│  └─ migrations/
+│     └─ 202609180001_create_sessions_and_messages.sql
 ├─ .gitignore
 ├─ CHANGELOG.md
 └─ README.md
 ```
 
-## 开始前准备
+## 数据表
 
-建议使用 Node.js 20.19 或更高版本。当前开发环境已验证：
+### `sessions`
+
+每个会话包含唯一 `id`、所有者 `owner_id`、标题、创建时间和更新时间。
+
+### `messages`
+
+每条消息包含唯一 `id`、所属 `session_id`、所有者 `owner_id`、角色、正文和创建时间。
+
+删除会话时，数据库会自动删除该会话下的所有消息。
+
+## Supabase 首次设置
+
+### 第一步：创建项目
+
+在 Supabase 后台创建一个项目。不要使用“秘密网址”作为保护方式。
+
+### 第二步：执行迁移
+
+打开 Supabase Dashboard 的 SQL Editor，将下面文件中的全部内容复制进去并执行：
 
 ```text
-Node.js v24.20.0
-npm 11.19.0
+G:\xiao\supabase\migrations\202609180001_create_sessions_and_messages.sql
 ```
 
-## 填写模型配置
+迁移会创建：
 
-真实密钥只能填写在：
+- `public.sessions`
+- `public.messages`
+- 必要索引
+- RLS 策略
+- `authenticated` 角色的最小表权限
+
+### 第三步：创建唯一用户
+
+打开 Supabase Dashboard 的 Authentication：
+
+1. 创建一个你自己的邮箱和密码用户。
+2. 关闭公开注册。
+3. 不创建额外的用户资料表。
+
+### 第四步：填写后端环境变量
+
+打开：
 
 ```text
 G:\xiao\backend\.env
 ```
 
-可以用记事本打开：
-
-```powershell
-notepad G:\xiao\backend\.env
-```
-
-需要填写以下变量：
+填写：
 
 ```env
-PORT=3000
-MODEL_BASE_URL=
-MODEL_NAME=
-MODEL_SYSTEM_PROMPT_FILE=config/system-prompt.txt
-MODEL_MAX_TOKENS=256
-MODEL_API_KEY=
+SUPABASE_URL=你的项目地址
+SUPABASE_PUBLISHABLE_KEY=你的可公开 Key
+SUPABASE_SECRET_KEY=你的 Secret Key
+AUTH_COOKIE_SECURE=false
 ```
 
-- `PORT`：后端端口，默认 `3000`。
-- `MODEL_BASE_URL`：填写模型平台给出的 OpenAI 兼容 API 基础地址，通常以 `/v1` 结尾。
-- `MODEL_NAME`：填写平台显示的完整模型 ID，不要只填写界面展示名称。当前使用 `anthropic/claude-opus-4-6-thinking` 这类由平台提供的 ID。
-- `MODEL_SYSTEM_PROMPT_FILE`：系统提示词文件的路径。完整提示词保存在后端配置文件中，前端不会获得。
-- `MODEL_MAX_TOKENS`：单次最大回复长度，当前为 `256`；后端会强制限制在 `1` 到 `512`。
-- `MODEL_API_KEY`：填写你自己的模型 API Key。
+说明：
 
-安全要求：
+- `SUPABASE_URL`：Supabase 项目地址。
+- `SUPABASE_PUBLISHABLE_KEY`：用于后端完成登录验证，属于可公开 Key，但仍然只放在后端。
+- `SUPABASE_SECRET_KEY`：高权限钥匙，只放后端环境变量。
+- `AUTH_COOKIE_SECURE`：本地 HTTP 使用 `false`；部署到 HTTPS 后改为 `true`。
 
-- 不要把 API Key 发到聊天中。
-- 不要把 API Key 写入 React 前端。
-- 不要使用 `VITE_` 前缀保存 API Key。
-- 不要把 API Key 写入源代码、日志或 Git。
-- `backend/.env` 已由 `.gitignore` 排除。
+不要把 Secret Key 发到聊天中，不要写入前端，不要提交到 Git。
+
+## 权限设计
+
+- 浏览器只调用森月居后端。
+- 浏览器不直接读取 `sessions` 或 `messages`。
+- Supabase RLS 已开启。
+- 未登录用户没有表权限。
+- 登录用户只能访问 `owner_id` 等于自己用户 ID 的行。
+- `owner_id` 只能由后端从已验证的访问令牌中读取。
+- 普通会话和消息请求使用用户令牌，由 RLS 限制权限。
+- Secret Key 不参与普通聊天请求。
+- `messages` 只允许读取和新增；删除会话时由数据库级联删除消息。
+- 数据库没有记忆压缩逻辑，也不保存长期摘要。
 
 ## 启动方法
 
-前端和后端需要分别在两个 PowerShell 窗口中运行。
+前端和后端分别运行在两个 PowerShell 窗口中。
 
-### 第一个窗口：启动后端
+### 后端
 
 ```powershell
 cd G:\xiao\backend
@@ -119,9 +152,9 @@ npm install
 npm run dev
 ```
 
-后端会读取 `backend/.env`，但不会把 Key 输出到终端。
+后端会读取 `backend/.env`，但不会输出 Key。
 
-### 第二个窗口：启动前端
+### 前端
 
 ```powershell
 cd G:\xiao\frontend
@@ -129,38 +162,37 @@ npm install
 npm run dev
 ```
 
-浏览器打开：
+浏览器访问：
 
 [http://localhost:5173](http://localhost:5173)
 
-## 检查后端
+## 健康检查
 
-健康检查：
+访问：
 
 [http://localhost:3000/api/health](http://localhost:3000/api/health)
 
 关键字段：
 
-- `status`: 应为 `ok`。
-- `modelConfigured`: 环境变量填写完整后应为 `true`。
-- `databaseConnected`: 应为 `false`。
-- `memoryEnabled`: 应为 `false`。
+- `status`: 应为 `ok`
+- `modelConfigured`: 模型环境变量完整时应为 `true`
+- `databaseConfigured`: Supabase 后端变量完整时应为 `true`
+- `secretKeyConfigured`: Secret Key 已填写时应为 `true`
+- `authRequired`: 应为 `true`
+- `memoryEnabled`: 应为 `false`
 
-健康检查不会调用模型，因此不会产生模型费用。
+健康检查不会发起模型请求，也不会产生模型费用。
 
-## 发送第一条测试消息
+## 持久化验收
 
-1. 确认后端终端显示“模型配置：已就绪”。
-2. 打开 [http://localhost:5173](http://localhost:5173)。
-3. 在输入框输入简单问题，例如：`你好，请用一句话介绍你自己。`
-4. 点击发送或按 Enter。
-5. 前端只把这一句话发送到 `POST /api/chat`。
-6. 后端调用所选模型，并把文本回复返回页面。
+1. 打开 [http://localhost:5173](http://localhost:5173)。
+2. 使用 Supabase 中创建的唯一账号登录。
+3. 点击“新建会话”，确认左侧出现新会话。
+4. 发送一条测试消息，确认枭回复。
+5. 刷新页面，确认会话和两条消息仍然存在。
+6. 点击另一个会话，再点击回来，确认历史消息正确加载。
+7. 删除该会话，确认左侧会话消失。
+8. 再刷新页面，确认被删除的会话没有恢复。
+9. 确认页面和数据库中都没有设置表、记忆压缩或长期摘要。
 
-第一次真正发送消息会调用模型服务，是否产生费用取决于你的模型平台和账户方案。
-
-## 停止运行
-
-在前后端终端窗口中分别按 `Ctrl + C`。
-
-
+第一次发送消息会调用模型服务，是否产生费用取决于你的模型平台和账户方案。
