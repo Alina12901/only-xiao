@@ -500,6 +500,7 @@ function App() {
       const data = await response.json().catch(() => ({}))
 
       if (!response.ok) {
+        setDraft(text)
         setNotice(data.error || '消息发送失败，请稍后重试。')
 
         if (activeIdRef.current === sessionId) {
@@ -533,6 +534,7 @@ function App() {
         setNotice(data.warning)
       }
     } catch (error) {
+      setDraft(text)
       setNotice(
         error instanceof Error ? error.message : '消息发送失败，请稍后重试。',
       )
@@ -761,7 +763,7 @@ function App() {
                 placeholder={
                   activeId ? '写下此刻想说的话……' : '请先新建一个会话'
                 }
-                disabled={!activeId || isLoadingMessages}
+                disabled={!activeId || isLoadingMessages || isReplying}
               />
               <span className="composer-hint">
                 Enter 发送 · Shift + Enter 换行

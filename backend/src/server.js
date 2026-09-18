@@ -512,6 +512,7 @@ app.post(
       console.error(`读取会话失败：${sessionError.code ?? 'unknown'}`)
       response.status(500).json({
         error: '会话读取失败，请稍后重试。',
+        code: 'SESSION_READ_FAILED',
       })
       return
     }
@@ -519,6 +520,20 @@ app.post(
     if (!session) {
       response.status(404).json({
         error: '没有找到这个会话。',
+        code: 'SESSION_NOT_FOUND',
+      })
+      return
+    }
+
+    let reply = ''
+
+    try {
+      reply = await requestModelReply(message)
+    } catch (_error) {
+      console.error('模型请求未能完成')
+      response.status(502).json({
+        error: '枭暂时没有回复，请重试。',
+        code: 'MODEL_FAILED',
       })
       return
     }
@@ -537,41 +552,8 @@ app.post(
     if (userMessageError) {
       console.error(`保存用户消息失败：${userMessageError.code ?? 'unknown'}`)
       response.status(500).json({
-        error: '消息没有发送成功，请重试。',
-      })
-      return
-    }
-
-    const nextTitle =
-      session.title === '新的会话' ? message.slice(0, 24) : session.title
-    const { data: updatedSession, error: sessionUpdateError } = await request.db
-      .from('sessions')
-      .update({
-        title: nextTitle,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', sessionId)
-      .eq('owner_id', request.user.id)
-      .select('id, title, created_at, updated_at')
-      .single()
-
-    if (sessionUpdateError) {
-      console.error(`更新会话失败：${sessionUpdateError.code ?? 'unknown'}`)
-      response.status(500).json({
-        error: '消息已保存，但会话状态更新失败，请稍后重试。',
-      })
-      return
-    }
-
-    let reply = ''
-
-    try {
-      reply = await requestModelReply(message)
-    } catch (_error) {
-      console.error('模型请求未能完成')
-      response.status(502).json({
-        error: '消息已保存，但枭暂时没有回复。',
-        code: 'MODEL_FAILED',
+        error: '消息没有保存成功，请重试。',
+        code: 'USER_MESSAGE_SAVE_FAILED',
       })
       return
     }
@@ -592,16 +574,32 @@ app.post(
       console.error(
         `保存助手消息失败：${assistantMessageError.code ?? 'unknown'}`,
       )
+
+      const { error: rollbackError } = await request.db
+        .from('messages')
+        .delete()
+        .eq('id', userMessage.id)
+        .eq('owner_id', request.user.id)
+
+      if (rollbackError) {
+        console.error(`回滚用户消息失败：${rollbackError.code ?? 'unknown'}`)
+      }
+
       response.status(500).json({
-        error: '枭已回复，但回复没有保存成功，请重试。',
+        error: '回复没有保存成功，请重试。',
+        code: 'REPLY_SAVE_FAILED',
       })
       return
     }
 
+    const nextTitle =
+      session.title === '新的会话' ? message.slice(0, 24) : session.title
+    const nextUpdatedAt = new Date().toISOString()
     const { data: finalSession, error: finalSessionError } = await request.db
       .from('sessions')
       .update({
-        updated_at: new Date().toISOString(),
+        title: nextTitle,
+        updated_at: nextUpdatedAt,
       })
       .eq('id', sessionId)
       .eq('owner_id', request.user.id)
@@ -609,20 +607,24 @@ app.post(
       .single()
 
     if (finalSessionError) {
-      console.error(`更新会话时间失败：${finalSessionError.code ?? 'unknown'}`)
+      console.error(`更新会话失败：${finalSessionError.code ?? 'unknown'}`)
     }
 
     response.json({
-      session: finalSession ?? updatedSession,
+      session:
+        finalSession ?? {
+          ...session,
+          title: nextTitle,
+          updated_at: nextUpdatedAt,
+        },
       userMessage,
       assistantMessage,
       warning: finalSessionError
-        ? '消息已保存，但会话排序时间更新失败。'
+        ? '消息已保存，但会话状态更新失败。'
         : null,
     })
   },
 )
-
 app.patch('/api/sessions/:id', requireUser, async (request, response) => {
   const sessionId = request.params.id
 
