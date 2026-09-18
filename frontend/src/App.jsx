@@ -67,6 +67,7 @@ function App() {
   const [conversations, setConversations] = useState(initialConversations)
   const [activeId, setActiveId] = useState(initialConversations[0].id)
   const [draft, setDraft] = useState('')
+  const [isReplying, setIsReplying] = useState(false)
   const messagesEndRef = useRef(null)
 
   const activeConversation =
@@ -94,15 +95,16 @@ function App() {
     setDraft('')
   }
 
-  const handleSend = (event) => {
+  const handleSend = async (event) => {
     event.preventDefault()
     const text = draft.trim()
 
-    if (!text) {
+    if (!text || isReplying) {
       return
     }
 
-    const message = {
+    const conversationId = activeId
+    const userMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
       content: text,
@@ -111,7 +113,7 @@ function App() {
 
     setConversations((current) =>
       current.map((conversation) => {
-        if (conversation.id !== activeId) {
+        if (conversation.id !== conversationId) {
           return conversation
         }
 
@@ -122,11 +124,68 @@ function App() {
               ? text.slice(0, 12)
               : conversation.title,
           preview: text,
-          messages: [...conversation.messages, message],
+          messages: [...conversation.messages, userMessage],
         }
       }),
     )
     setDraft('')
+    setIsReplying(true)
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: text }),
+      })
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok || typeof data.reply !== 'string') {
+        throw new Error(data.error || '没有收到有效回应')
+      }
+
+      const assistantMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: data.reply,
+        time: getCurrentTime(),
+      }
+
+      setConversations((current) =>
+        current.map((conversation) =>
+          conversation.id === conversationId
+            ? {
+                ...conversation,
+                preview: assistantMessage.content,
+                messages: [...conversation.messages, assistantMessage],
+              }
+            : conversation,
+        ),
+      )
+    } catch (error) {
+      console.error(error)
+      const errorMessage = {
+        id: `assistant-error-${Date.now()}`,
+        role: 'assistant',
+        content: '暂时没有收到回应。请确认后端服务已经启动后再试。',
+        time: getCurrentTime(),
+      }
+
+      setConversations((current) =>
+        current.map((conversation) =>
+          conversation.id === conversationId
+            ? {
+                ...conversation,
+                preview: errorMessage.content,
+                messages: [...conversation.messages, errorMessage],
+              }
+            : conversation,
+        ),
+      )
+    } finally {
+      setIsReplying(false)
+    }
   }
 
   const handleComposerKeyDown = (event) => {
@@ -202,7 +261,7 @@ function App() {
           </div>
           <div className="phase-status">
             <span className="status-dot" aria-hidden="true" />
-            静态页面 · 未连接模型
+            单次问答 · 未连接模型
           </div>
         </header>
 
@@ -241,11 +300,21 @@ function App() {
               <p>写下第一句话，这段会话便会从这里开始。</p>
             </div>
           )}
+          {isReplying && (
+            <div className="reply-indicator" role="status">
+              <span aria-hidden="true" />
+              枭正在回应
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </section>
 
         <section className="composer-zone" aria-label="消息输入区">
-          <form className="composer" onSubmit={handleSend}>
+          <form
+            className="composer"
+            onSubmit={handleSend}
+            aria-busy={isReplying}
+          >
             <div className="composer-field">
               <label className="sr-only" htmlFor="message-input">
                 给枭的消息
@@ -262,13 +331,13 @@ function App() {
                 Enter 发送 · Shift + Enter 换行
               </span>
             </div>
-            <button type="submit" disabled={!draft.trim()}>
-              发送
+            <button type="submit" disabled={!draft.trim() || isReplying}>
+              {isReplying ? '等待' : '发送'}
               <span aria-hidden="true">↗</span>
             </button>
           </form>
           <p className="phase-note">
-            枭尚未连接模型；当前消息只在本次页面中显示，刷新后不会保留。
+            每次只发送当前这一句话，不保存历史记录；枭尚未连接模型。
           </p>
         </section>
       </main>

@@ -19,10 +19,27 @@ app.get('/api/health', (_request, response) => {
     status: 'ok',
     app: '森月居',
     ai: '枭',
-    phase: '第一阶段：静态界面',
+    phase: '第二阶段：最小一问一答',
     modelConnected: false,
     databaseConnected: false,
     memoryEnabled: false,
+  })
+})
+
+app.post('/api/chat', (request, response) => {
+  const message =
+    typeof request.body?.message === 'string' ? request.body.message.trim() : ''
+
+  if (!message) {
+    response.status(400).json({
+      error: '消息不能为空',
+    })
+    return
+  }
+
+  response.json({
+    reply:
+      '我听见了。当前只验证最小的一问一答，枭还没有连接语言模型，所以这句话暂时由占位回应代替。',
   })
 })
 
@@ -35,4 +52,3 @@ app.use((_request, response) => {
 app.listen(port, '127.0.0.1', () => {
   console.log(`森月居后端已启动：http://localhost:${port}`)
 })
-
