@@ -164,11 +164,14 @@ function App() {
         ),
       )
     } catch (error) {
-      console.error(error)
+      const errorText =
+        error instanceof Error && error.message !== 'Failed to fetch'
+          ? error.message
+          : '暂时没有收到回应。请确认后端服务已经启动后再试。'
       const errorMessage = {
         id: `assistant-error-${Date.now()}`,
         role: 'assistant',
-        content: '暂时没有收到回应。请确认后端服务已经启动后再试。',
+        content: errorText,
         time: getCurrentTime(),
       }
 
@@ -261,7 +264,7 @@ function App() {
           </div>
           <div className="phase-status">
             <span className="status-dot" aria-hidden="true" />
-            单次问答 · 未连接模型
+            单次问答 · 无记忆
           </div>
         </header>
 
@@ -337,7 +340,7 @@ function App() {
             </button>
           </form>
           <p className="phase-note">
-            每次只发送当前这一句话，不保存历史记录；枭尚未连接模型。
+            每次只发送当前这一句话，不保存历史记录，也不使用数据库。
           </p>
         </section>
       </main>
