@@ -220,3 +220,18 @@
 - 保留 `/api/health`
 - 增加 `DEPLOYMENT.md`
 - 增加前端环境变量模板
+
+## v0.8.1 - 2026-09-18
+
+状态：根据 `xiaokecat-chat glass.pdf` 摘要补充 Watercolor Glass 前端材质。
+
+已完成：
+
+- 增加全局 `--glass-blur`
+- 增加 watercolor glass 设计 tokens
+- 增加玻璃背景、边框、阴影、detail、scrim 变量
+- 输入区使用独立 `#composer::before` 玻璃层
+- 使用 `isolation: isolate` 隔离玻璃层
+- 增加内外高光
+- 增加 `blur()` 与 `saturate()` 组合
+- 同步整理消息气泡、侧边栏、顶部栏和设置卡片

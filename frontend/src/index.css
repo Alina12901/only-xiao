@@ -1,4 +1,16 @@
 :root {
+  --glass-blur: 16px;
+  --card-rgb: 255, 255, 255;
+  --surface-rgb: 225, 235, 245;
+  --shadow-rgb: 91, 119, 158;
+  --border-rgb: 255, 255, 255;
+  --ink-rgb: 64, 83, 106;
+  --r-xl: 24px;
+  --r-lg: 16px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-4: 16px;
+  --sp-5: 24px;
   font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
   color: #40536a;
   background: #e9eff7;
@@ -6,6 +18,27 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-appearance-theme="watercolor"] {
+  --glass-dream-fill: linear-gradient(180deg, rgba(var(--card-rgb), 0.18), rgba(var(--surface-rgb), 0.07));
+  --glass-dream-control-fill: linear-gradient(145deg, rgba(var(--card-rgb), 0.44), rgba(var(--surface-rgb), 0.22));
+  --glass-dream-border: rgba(var(--card-rgb), 0.42);
+  --glass-dream-shadow: 0 12px 28px rgba(var(--shadow-rgb), 0.12), 0 3px 10px rgba(var(--shadow-rgb), 0.06);
+  --glass-dream-detail-fill: rgba(var(--surface-rgb), 0.54);
+  --glass-dream-scrim: rgba(var(--shadow-rgb), 0.16);
+  --glass-dream-card-shadow: 0 5px 12px rgba(var(--shadow-rgb), 0.08), 0 1px 3px rgba(var(--shadow-rgb), 0.05);
+  --glass-chat-top: calc(max(var(--sp-5), env(safe-area-inset-top)) + 42px + var(--sp-2));
+  --glass-composer-fill: rgba(var(--card-rgb), 0.34);
+  --glass-keyboard-shadow: 0 8px 28px rgba(var(--shadow-rgb), 0.08);
+  --glass-drawer-fill: linear-gradient(155deg, rgba(var(--card-rgb), 0.52), rgba(var(--surface-rgb), 0.34) 60%, rgba(var(--card-rgb), 0.42));
+  --glass-drawer-shadow: 8px 0 32px rgba(var(--shadow-rgb), 0.10), inset -1px 0 0 rgba(var(--card-rgb), 0.62), inset -3px 0 8px rgba(var(--card-rgb), 0.20);
+  --glass-account-fill: radial-gradient(ellipse at 0% 0%, rgba(var(--card-rgb), 0.46), rgba(var(--card-rgb), 0) 58%), linear-gradient(155deg, rgba(var(--card-rgb), 0.24), rgba(var(--surface-rgb), 0.12) 60%, rgba(var(--card-rgb), 0.18));
+  --glass-account-border: rgba(var(--card-rgb), 0.24);
+  --glass-account-shadow: inset 0 1px 0 rgba(var(--card-rgb), 0.20);
+  --glass-control-fill: rgba(var(--ink-rgb), 0.06);
+  --glass-drawer-divider: rgba(var(--card-rgb), 0.16);
+  --glass-drawer-wallpaper-shade: rgba(var(--shadow-rgb), 0.18);
 }
 
 * {

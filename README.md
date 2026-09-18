@@ -15,7 +15,7 @@
 - 从供应商拉取模型并选择默认模型
 - 后端加密保存供应商 API Key
 
-当前版本：v0.8.0。详细版本记录见 `CHANGELOG.md`。
+当前版本：v0.8.1。详细版本记录见 `CHANGELOG.md`。
 
 ## 目录位置
 
@@ -261,6 +261,8 @@ npm run build
 - React + Vite 前端
 - Node.js + Express 后端
 - 清冷浅灰蓝、蓝粉渐变的界面
+- Watercolor Glass 玻璃材质 tokens
+- 输入区独立玻璃层、内外高光与 blur/saturate
 - 单用户登录
 - 会话列表、自动加载和历史切换
 - 新建、重命名和删除会话

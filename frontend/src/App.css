@@ -1497,3 +1497,105 @@
   flex-direction: column;
   gap: 14px;
 }
+
+/* Watercolor glass material tokens adapted from the supplied design notes. */
+.sidebar {
+  border-right-color: var(--glass-drawer-divider);
+  background: var(--glass-drawer-fill);
+  box-shadow: var(--glass-drawer-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+}
+
+.chat-header,
+.composer-zone {
+  background: var(--glass-composer-fill);
+  box-shadow: var(--glass-dream-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+}
+
+.new-conversation,
+.conversation-card.is-active,
+.logout-button,
+.settings-button {
+  border-color: var(--glass-dream-border);
+  background: var(--glass-dream-control-fill);
+  box-shadow: var(--glass-dream-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+}
+
+.message-bubble {
+  border-color: var(--glass-dream-border);
+  background: var(--glass-dream-detail-fill);
+  box-shadow: var(--glass-dream-card-shadow), inset 0 1px 0 rgba(var(--card-rgb), 0.72);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+}
+
+.message-row.user .message-bubble {
+  border-color: rgba(var(--card-rgb), 0.72);
+  box-shadow: var(--glass-dream-shadow), inset 0 1px 0 rgba(var(--card-rgb), 0.62);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(145%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(145%);
+}
+
+.auth-card,
+.rename-dialog,
+.provider-card,
+.settings-warning,
+.settings-error,
+.settings-message {
+  border-color: var(--glass-dream-border);
+  background: var(--glass-dream-fill), rgba(var(--surface-rgb), 0.38);
+  box-shadow: var(--glass-dream-card-shadow), inset 0 1px 0 rgba(var(--card-rgb), 0.72);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+}
+
+.settings-field input,
+.settings-field select,
+.settings-field textarea,
+.auth-field input,
+.rename-field input,
+.composer textarea {
+  border-color: rgba(var(--border-rgb), 0.46);
+  background: rgba(var(--surface-rgb), 0.44);
+  box-shadow: 0 0 0 1px rgba(var(--card-rgb), 0.58), inset 0 1px 0 rgba(var(--card-rgb), 0.66);
+}
+
+#composer {
+  position: relative;
+  isolation: isolate;
+  padding: var(--sp-4);
+  border-radius: var(--r-xl);
+}
+
+#composer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 1px solid rgba(var(--border-rgb), 0.46);
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(var(--surface-rgb), 0.86), rgba(var(--surface-rgb), 0.72));
+  box-shadow:
+    0 0 0 1px rgba(var(--card-rgb), 0.80),
+    0 8px 28px rgba(var(--shadow-rgb), 0.08),
+    inset 0 1px 0 rgba(var(--card-rgb), 0.72);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(132%);
+}
+
+.composer-field,
+#composer > button {
+  position: relative;
+  z-index: 1;
+}
+
+.modal-backdrop {
+  background: var(--glass-dream-scrim);
+  -webkit-backdrop-filter: blur(10px) saturate(128%);
+  backdrop-filter: blur(10px) saturate(128%);
+}
