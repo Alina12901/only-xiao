@@ -15,7 +15,7 @@
 - 从供应商拉取模型并选择默认模型
 - 后端加密保存供应商 API Key
 
-当前版本：v0.7.1。详细版本记录见 `CHANGELOG.md`。
+当前版本：v0.8.0。详细版本记录见 `CHANGELOG.md`。
 
 ## 目录位置
 
@@ -51,6 +51,8 @@ G:\xiao
 │  ├─ src/App.jsx             前端页面和交互
 │  ├─ src/App.css             前端样式
 │  ├─ vite.config.js          前端配置
+│  ├─ .env.example           前端公开环境变量模板
+│  ├─ index.html             前端页面入口
 │  └─ package.json
 ├─ backend/
 │  ├─ src/server.js           后端接口和认证
@@ -62,24 +64,35 @@ G:\xiao
 │  └─ package.json
 ├─ supabase/migrations/       Supabase 数据库迁移
 ├─ SECURITY.md
+├─ DEPLOYMENT.md
 ├─ CHANGELOG.md
 └─ README.md
 ```
 
 ## 环境变量名称
 
-真实值只能写入：
+后端真实值只能写入：
 
 ```text
 G:\xiao\backend\.env
 ```
 
-不要提交 `.env`，不要把真实值发到聊天中。
+前端只允许公开配置，使用：
+
+```text
+G:\xiao\frontend\.env
+```
+
+不要提交真实后端 `.env`，不要把真实值发到聊天中。
+
+### 后端环境变量
 
 | 变量名 | 用途 |
 |---|---|
-| `PORT` | 后端监听端口 |
-| `MODEL_BASE_URL` | 当前兼容网关的基础地址 |
+| `PORT` | 平台提供的后端端口；本地默认 3000 |
+| `HOST` | 监听地址；本地可用 `127.0.0.1`，部署通常使用 `0.0.0.0` |
+| `FRONTEND_ORIGIN` | 允许访问后端的前端公开地址，多个地址用英文逗号分隔 |
+| `MODEL_BASE_URL` | 当前兼容网关基础地址 |
 | `MODEL_API_KEY` | 当前兼容网关密钥 |
 | `MODEL_NAME` | 当前兼容网关默认模型 ID |
 | `MODEL_SYSTEM_PROMPT_FILE` | 默认系统提示词文件路径 |
@@ -87,18 +100,27 @@ G:\xiao\backend\.env
 | `MODEL_TEMPERATURE` | 默认温度 |
 | `SUPABASE_URL` | Supabase 项目地址 |
 | `SUPABASE_PUBLISHABLE_KEY` | Supabase 可公开 Key，仅由后端读取 |
-| `SUPABASE_SECRET_KEY` | Supabase Secret/Service Key，仅由后端读取 |
+| `SUPABASE_SECRET_KEY` | Supabase Secret/Secret Key，仅由后端读取 |
 | `AUTH_COOKIE_SECURE` | 本地使用 `false`，HTTPS 部署使用 `true` |
+| `AUTH_COOKIE_SAME_SITE` | 本地或同站使用 `lax`；完全跨站使用 `none` |
 | `CREDENTIAL_ENCRYPTION_KEY` | 加密用户填写的供应商 API Key |
 
-环境变量模板文件是：
+### 前端环境变量
+
+| 变量名 | 用途 |
+|---|---|
+| `VITE_API_BASE_URL` | 后端公开地址；本地留空使用 Vite 代理，部署时填写后端 HTTPS 地址 |
+
+前端变量会进入公开构建产物，只能填写公开信息，绝对不能放 API Key。
+
+环境变量模板文件：
 
 ```text
 G:\xiao\backend\.env.example
+G:\xiao\frontend\.env.example
 ```
 
 模板中不包含真实值。
-
 ## 数据库初始化
 
 ### 第一步：创建 Supabase 项目
@@ -272,6 +294,8 @@ npm run build
 - 云端部署
 - 多用户开放注册
 - 自动备份和恢复
+
+部署顺序、公开步骤和收费提示见 `DEPLOYMENT.md`。
 
 ## 安全约定
 

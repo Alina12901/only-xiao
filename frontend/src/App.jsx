@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
 
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
+const apiUrl = (path) => apiBaseUrl + (path.startsWith('/') ? path : '/' + path)
+
 const aiProfile = {
   name: '枭',
   avatarUrl: null,
@@ -431,8 +434,9 @@ function App() {
 
   const refreshSession = async () => {
     try {
-      const response = await fetch('/api/auth/refresh', {
+      const response = await fetch(apiUrl('/api/auth/refresh'), {
         method: 'POST',
+        credentials: 'include',
       })
       const data = await response.json().catch(() => ({}))
 
@@ -468,8 +472,9 @@ function App() {
       headers.set('Content-Type', 'application/json')
     }
 
-    const response = await fetch(path, {
+    const response = await fetch(apiUrl(path), {
       ...options,
+      credentials: 'include',
       headers,
     })
 
@@ -881,8 +886,9 @@ function App() {
     setAuthError('')
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -904,8 +910,9 @@ function App() {
   }
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', {
+    await fetch(apiUrl('/api/auth/logout'), {
       method: 'POST',
+      credentials: 'include',
     }).catch(() => null)
 
     accessTokenRef.current = ''

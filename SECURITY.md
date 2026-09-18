@@ -50,7 +50,7 @@
 - `sessions`、`messages`、`settings` 和 `provider_credentials` 开启 RLS。
 - RLS 策略限制用户只访问 `owner_id = auth.uid()` 的数据。
 - `messages` 只开放读取和新增，未开放更新和直接删除。
-- 当前没有全局放行的 CORS 配置。
+- CORS 只允许 `FRONTEND_ORIGIN` 中列出的精确前端来源，不支持通配符。
 - 自定义第三方地址只允许 HTTPS。
 - 自定义第三方地址会阻止本机、内网、链路本地和保留地址。
 - 自定义请求禁止 HTTP 重定向。
@@ -63,10 +63,12 @@
 
 ### 需要确认
 
-- 当前本地开发使用 `AUTH_COOKIE_SECURE=false`。正式 HTTPS 部署必须改为 `true`。
+- 当前本地开发使用 AUTH_COOKIE_SECURE=false。正式 HTTPS 部署必须改为 	rue。
+- 本地 Cookie 使用 AUTH_COOKIE_SAME_SITE=lax。前后端部署在完全不同的站点时，应改为
+one 并同时启用 Secure。
 - `SUPABASE_SECRET_KEY` 当前只用于检查配置是否填写，不参与普通业务请求。若后续确认不需要管理级操作，可以从后端环境中移除，以减少高权限凭据暴露面。
 - 当前没有接口限流。本机单用户使用可以接受；公开部署前应增加登录、聊天和供应商连接限流。
-- 当前没有独立 CSRF Token。SameSite Cookie、无跨域放行和同源代理降低了风险；公开部署前仍应复核。
+- 当前没有独立 CSRF Token。SameSite Cookie、精确 CORS 白名单和同源代理降低了风险；公开部署前仍应复核。
 - 自定义第三方地址虽然禁止内网和重定向，但公网 DNS 仍存在理论上的 DNS Rebinding 窗口。公开部署时应通过出站代理或网络层白名单进一步限制。
 - Supabase Dashboard 管理员可以看到加密凭据行，但看不到明文 API Key。
 

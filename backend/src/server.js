@@ -22,6 +22,9 @@ import express from 'express'
 const app = express()
 const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const port = Number(process.env.PORT) || 3000
+const host =
+  process.env.HOST?.trim() ||
+  (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1')
 
 const modelApiKey = process.env.MODEL_API_KEY?.trim() ?? ''
 const modelBaseUrl = (process.env.MODEL_BASE_URL?.trim() ?? '').replace(/\/+$/, '')
@@ -53,6 +56,17 @@ const databaseConfigured = Boolean(supabaseUrl && supabasePublishableKey)
 const authCookieName = 'senyueju_refresh_token'
 const authCookiePath = '/api/auth'
 const authCookieSecure = process.env.AUTH_COOKIE_SECURE === 'true'
+let authCookieSameSite = process.env.AUTH_COOKIE_SAME_SITE?.trim().toLowerCase() || 'lax'
+if (!['lax', 'strict', 'none'].includes(authCookieSameSite)) authCookieSameSite = 'lax'
+if (authCookieSameSite === 'none' && !authCookieSecure) {
+  console.warn('AUTH_COOKIE_SAME_SITE=none requires AUTH_COOKIE_SECURE=true')
+}
+const frontendOrigins = new Set(
+  (process.env.FRONTEND_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+)
 
 let modelSystemPrompt = ''
 
@@ -72,8 +86,36 @@ const isModelConfigured = Boolean(
   modelApiKey && modelEndpoint && modelName && modelSystemPrompt,
 )
 
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1)
+}
+
 app.disable('x-powered-by')
 app.use(express.json({ limit: '100kb' }))
+
+app.use((request, response, next) => {
+  const origin = request.get('origin')
+  const originAllowed = Boolean(origin && frontendOrigins.has(origin))
+
+  if (originAllowed) {
+    response.set('Access-Control-Allow-Origin', origin)
+    response.set('Access-Control-Allow-Credentials', 'true')
+    response.set('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+    response.set(
+      'Access-Control-Allow-Methods',
+      'GET, POST, PATCH, DELETE, OPTIONS',
+    )
+    response.set('Access-Control-Max-Age', '600')
+    response.set('Vary', 'Origin')
+  }
+
+  if (request.method === 'OPTIONS') {
+    response.status(originAllowed ? 204 : 403).end()
+    return
+  }
+
+  next()
+})
 
 function sendDatabaseConfigError(response) {
   response.status(503).json({
@@ -109,7 +151,7 @@ function getRefreshToken(request) {
 function setRefreshCookie(response, refreshToken) {
   response.cookie(authCookieName, refreshToken, {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: authCookieSameSite,
     secure: authCookieSecure,
     path: authCookiePath,
     maxAge: 30 * 24 * 60 * 60 * 1000,
@@ -119,7 +161,7 @@ function setRefreshCookie(response, refreshToken) {
 function clearRefreshCookie(response) {
   response.clearCookie(authCookieName, {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: authCookieSameSite,
     secure: authCookieSecure,
     path: authCookiePath,
   })
@@ -1587,8 +1629,8 @@ app.use((error, _request, response, _next) => {
   })
 })
 
-app.listen(port, '127.0.0.1', () => {
-  console.log(`森月居后端已启动：http://localhost:${port}`)
+app.listen(port, host, () => {
+  console.log(`森月居后端已启动：http://${host}:${port}`)
   console.log(`模型配置：${isModelConfigured ? '已就绪' : '未完成'}`)
   console.log(`数据库配置：${databaseConfigured ? '已就绪' : '未完成'}`)
   console.log(`最大回复长度：${modelMaxTokens} tokens`)

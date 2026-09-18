@@ -203,3 +203,20 @@
 - 增加 `SECURITY.md`
 - 明确可公开、不可公开和需要确认的安全边界
 - 整理上线前安全检查清单
+
+## v0.8.0 - 2026-09-18
+
+状态：部署准备完成，未创建公开服务。
+
+已完成：
+
+- 后端支持平台 `PORT`
+- 后端支持可配置 `HOST`
+- 生产环境默认监听 `0.0.0.0`
+- 后端 CORS 使用 `FRONTEND_ORIGIN` 精确白名单
+- Cookie 支持 `AUTH_COOKIE_SAME_SITE`
+- 前端使用 `VITE_API_BASE_URL` 连接公开后端
+- 跨域请求携带凭据
+- 保留 `/api/health`
+- 增加 `DEPLOYMENT.md`
+- 增加前端环境变量模板
