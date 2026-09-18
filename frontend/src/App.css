@@ -1230,3 +1230,196 @@
   line-height: 1;
 }
 
+
+.settings-button,
+.logout-button {
+  min-height: 36px;
+  color: #71869d;
+  font-size: 12px;
+  border: 1px solid rgba(115, 151, 190, 0.17);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.42);
+  cursor: pointer;
+}
+
+.settings-button.is-active {
+  color: #355777;
+  border-color: rgba(119, 163, 207, 0.32);
+  background: linear-gradient(135deg, rgba(166, 208, 242, 0.5), rgba(235, 190, 218, 0.38));
+}
+
+.settings-view {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  background:
+    radial-gradient(circle at 82% 2%, rgba(161, 207, 246, 0.34), transparent 34%),
+    radial-gradient(circle at 15% 100%, rgba(247, 190, 217, 0.22), transparent 34%),
+    linear-gradient(145deg, rgba(249, 251, 254, 0.78), rgba(239, 243, 251, 0.88));
+}
+
+.settings-header {
+  display: flex;
+  min-height: 96px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px clamp(26px, 4vw, 62px);
+  border-bottom: 1px solid var(--line);
+  background: rgba(250, 252, 255, 0.56);
+  backdrop-filter: blur(18px);
+}
+
+.settings-header h2 {
+  margin: 0;
+  color: #314a67;
+  font-size: clamp(18px, 2vw, 22px);
+  font-weight: 500;
+}
+
+.settings-back {
+  min-height: 38px;
+  padding: 0 14px;
+  color: #58718e;
+  font-size: 12px;
+  border: 1px solid rgba(115, 151, 190, 0.18);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.56);
+  cursor: pointer;
+}
+
+.settings-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: clamp(24px, 4vw, 48px) clamp(24px, 5vw, 74px);
+}
+
+.settings-form {
+  display: flex;
+  max-width: 800px;
+  flex-direction: column;
+  gap: 22px;
+  margin: 0 auto;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #60768e;
+  font-size: 13px;
+}
+
+.settings-field input,
+.settings-field textarea {
+  width: 100%;
+  padding: 13px 15px;
+  color: #354e69;
+  line-height: 1.6;
+  border: 1px solid rgba(119, 157, 196, 0.24);
+  border-radius: 13px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 8px 20px rgba(94, 128, 166, 0.06);
+}
+
+.settings-field textarea {
+  min-height: 250px;
+  resize: vertical;
+}
+
+.settings-field input:focus,
+.settings-field textarea:focus {
+  border-color: rgba(104, 157, 207, 0.5);
+  box-shadow: 0 0 0 3px rgba(115, 169, 218, 0.11);
+}
+
+.settings-field small {
+  color: #8c9daf;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.settings-warning,
+.settings-error,
+.settings-message,
+.settings-loading {
+  margin: 0;
+  padding: 11px 13px;
+  font-size: 12px;
+  line-height: 1.7;
+  border-radius: 12px;
+}
+
+.settings-warning {
+  color: #8b5b74;
+  border: 1px solid rgba(198, 119, 154, 0.18);
+  background: rgba(247, 218, 231, 0.52);
+}
+
+.settings-error {
+  color: #8e4f6b;
+  border: 1px solid rgba(198, 119, 154, 0.18);
+  background: rgba(247, 218, 231, 0.5);
+}
+
+.settings-message {
+  color: #55738e;
+  border: 1px solid rgba(119, 160, 202, 0.16);
+  background: rgba(220, 237, 249, 0.62);
+}
+
+.settings-loading {
+  max-width: 800px;
+  margin: 0 auto;
+  color: #7d91a6;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.settings-save {
+  min-height: 48px;
+  align-self: flex-start;
+  padding: 0 22px;
+  color: #2e4c6b;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 13px;
+  background: linear-gradient(135deg, #9ac8ee, #d9acd0);
+  box-shadow: 0 10px 26px rgba(105, 137, 180, 0.16);
+  cursor: pointer;
+}
+
+.settings-save:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+@media (max-width: 540px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-header {
+    min-height: 82px;
+    padding: 18px 20px;
+  }
+
+  .settings-body {
+    padding: 22px 18px 26px;
+  }
+
+  .settings-field textarea {
+    min-height: 210px;
+  }
+}

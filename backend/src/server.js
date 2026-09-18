@@ -20,6 +20,15 @@ const configuredMaxTokens = Number.parseInt(
 const modelMaxTokens = Number.isFinite(configuredMaxTokens)
   ? Math.min(Math.max(configuredMaxTokens, 1), 512)
   : 256
+const configuredTemperature = Number.parseFloat(
+  process.env.MODEL_TEMPERATURE ?? '1',
+)
+const modelTemperature =
+  Number.isFinite(configuredTemperature) &&
+  configuredTemperature >= 0 &&
+  configuredTemperature <= 1
+    ? configuredTemperature
+    : 1
 
 const supabaseUrl = process.env.SUPABASE_URL?.trim() ?? ''
 const supabasePublishableKey =
@@ -195,7 +204,114 @@ async function getOwnedSession(client, sessionId, ownerId) {
   return { session: data }
 }
 
-async function requestModelReply(message) {
+function mapSettings(row) {
+  return {
+    systemPrompt: row.system_prompt,
+    modelName: row.model_name,
+    maxReplyTokens: row.max_reply_tokens,
+    temperature: Number(row.temperature),
+    updatedAt: row.updated_at,
+  }
+}
+
+function getDefaultSettings() {
+  return {
+    systemPrompt: modelSystemPrompt,
+    modelName,
+    maxReplyTokens: modelMaxTokens,
+    temperature: modelTemperature,
+  }
+}
+
+function isMissingSettingsTable(error) {
+  const message = error?.message ?? ''
+  return (
+    error?.code === '42P01' ||
+    error?.code === 'PGRST205' ||
+    message.includes('public.settings')
+  )
+}
+
+async function getOrCreateUserSettings(client, userId) {
+  const { data, error } = await client
+    .from('settings')
+    .select(
+      'system_prompt, model_name, max_reply_tokens, temperature, updated_at',
+    )
+    .eq('owner_id', userId)
+    .maybeSingle()
+
+  if (error) {
+    if (isMissingSettingsTable(error)) {
+      return {
+        settings: getDefaultSettings(),
+        persisted: false,
+      }
+    }
+
+    return { error }
+  }
+
+  if (data) {
+    return {
+      settings: mapSettings(data),
+      persisted: true,
+    }
+  }
+
+  const defaults = getDefaultSettings()
+  const { data: created, error: createError } = await client
+    .from('settings')
+    .insert({
+      owner_id: userId,
+      system_prompt: defaults.systemPrompt,
+      model_name: defaults.modelName,
+      max_reply_tokens: defaults.maxReplyTokens,
+      temperature: defaults.temperature,
+    })
+    .select(
+      'system_prompt, model_name, max_reply_tokens, temperature, updated_at',
+    )
+    .single()
+
+  if (createError) {
+    if (isMissingSettingsTable(createError)) {
+      return {
+        settings: defaults,
+        persisted: false,
+      }
+    }
+
+    if (createError.code === '23505') {
+      const { data: existing, error: existingError } = await client
+        .from('settings')
+        .select(
+          'system_prompt, model_name, max_reply_tokens, temperature, updated_at',
+        )
+        .eq('owner_id', userId)
+        .maybeSingle()
+
+      if (existingError) {
+        return { error: existingError }
+      }
+
+      if (existing) {
+        return {
+          settings: mapSettings(existing),
+          persisted: true,
+        }
+      }
+    }
+
+    return { error: createError }
+  }
+
+  return {
+    settings: mapSettings(created),
+    persisted: true,
+  }
+}
+async function requestModelReply(message, settings) {
   const modelResponse = await fetch(modelEndpoint, {
     method: 'POST',
     headers: {
@@ -203,18 +319,19 @@ async function requestModelReply(message) {
       authorization: `Bearer ${modelApiKey}`,
     },
     body: JSON.stringify({
-      model: modelName,
+      model: settings.modelName,
       messages: [
         {
           role: 'system',
-          content: modelSystemPrompt,
+            content: settings.systemPrompt,
         },
         {
           role: 'user',
           content: message,
         },
       ],
-      max_tokens: modelMaxTokens,
+      max_tokens: settings.maxReplyTokens,
+      temperature: settings.temperature,
       stream: false,
     }),
     signal: AbortSignal.timeout(60000),
@@ -254,7 +371,7 @@ app.get('/api/health', (_request, response) => {
     status: 'ok',
     app: '森月居',
     ai: '枭',
-    phase: '第三阶段：Supabase 持久化',
+    phase: '第四阶段：用户设置',
     provider: 'openai-compatible',
     modelConfigured: isModelConfigured,
     modelNameConfigured: Boolean(modelName),
@@ -363,6 +480,145 @@ app.post('/api/auth/logout', (_request, response) => {
   response.status(204).end()
 })
 
+app.get('/api/settings', requireUser, async (request, response) => {
+  const { settings, persisted, error } = await getOrCreateUserSettings(
+    request.db,
+    request.user.id,
+  )
+
+  if (error) {
+    console.error(`读取设置失败：${error.code ?? 'unknown'}`)
+    response.status(500).json({
+      error: '用户设置暂时无法读取，请稍后重试。',
+    })
+    return
+  }
+
+  response.json({
+    settings,
+    persisted,
+    message: persisted
+      ? null
+      : '设置表尚未创建，当前使用后端默认设置，暂时无法保存。',
+  })
+})
+
+app.patch('/api/settings', requireUser, async (request, response) => {
+  const currentResult = await getOrCreateUserSettings(
+    request.db,
+    request.user.id,
+  )
+
+  if (currentResult.error) {
+    console.error(`读取设置失败：${currentResult.error.code ?? 'unknown'}`)
+    response.status(500).json({
+      error: '用户设置暂时无法读取，请稍后重试。',
+    })
+    return
+  }
+
+  if (!currentResult.persisted) {
+    response.status(503).json({
+      error: '设置表尚未创建，请先在 Supabase 执行设置表迁移。',
+    })
+    return
+  }
+
+  const current = currentResult.settings
+  const systemPrompt =
+    typeof request.body?.systemPrompt === 'string'
+      ? request.body.systemPrompt.trim()
+      : current.systemPrompt
+  const modelName =
+    typeof request.body?.modelName === 'string'
+      ? request.body.modelName.trim()
+      : current.modelName
+  const maxReplyTokens = Number.parseInt(
+    String(request.body?.maxReplyTokens ?? current.maxReplyTokens),
+    10,
+  )
+  const temperature = Number.parseFloat(
+    String(request.body?.temperature ?? current.temperature),
+  )
+
+  if (!systemPrompt) {
+    response.status(400).json({
+      error: '系统提示词不能为空。',
+    })
+    return
+  }
+
+  if (systemPrompt.length > 20000) {
+    response.status(400).json({
+      error: '系统提示词不能超过 20000 个字符。',
+    })
+    return
+  }
+
+  if (!modelName) {
+    response.status(400).json({
+      error: '默认模型名称不能为空。',
+    })
+    return
+  }
+
+  if (modelName.length > 200) {
+    response.status(400).json({
+      error: '默认模型名称不能超过 200 个字符。',
+    })
+    return
+  }
+
+  if (
+    !Number.isInteger(maxReplyTokens) ||
+    maxReplyTokens < 1 ||
+    maxReplyTokens > 512
+  ) {
+    response.status(400).json({
+      error: '最大回复长度必须是 1 到 512 之间的整数。',
+    })
+    return
+  }
+
+  if (
+    !Number.isFinite(temperature) ||
+    temperature < 0 ||
+    temperature > 1
+  ) {
+    response.status(400).json({
+      error: '温度必须是 0 到 1 之间的数字。',
+    })
+    return
+  }
+
+  const { data, error } = await request.db
+    .from('settings')
+    .update({
+      system_prompt: systemPrompt,
+      model_name: modelName,
+      max_reply_tokens: maxReplyTokens,
+      temperature,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('owner_id', request.user.id)
+    .select(
+      'system_prompt, model_name, max_reply_tokens, temperature, updated_at',
+    )
+    .single()
+
+  if (error) {
+    console.error(`保存设置失败：${error.code ?? 'unknown'}`)
+    response.status(500).json({
+      error: '设置保存失败，请稍后重试。',
+    })
+    return
+  }
+
+  response.json({
+    settings: mapSettings(data),
+    message: '设置已保存。',
+  })
+})
 app.get('/api/sessions', requireUser, async (request, response) => {
   const { data, error } = await request.db
     .from('sessions')
@@ -525,10 +781,32 @@ app.post(
       return
     }
 
+    const {
+      settings,
+      error: settingsError,
+    } = await getOrCreateUserSettings(request.db, request.user.id)
+
+    if (settingsError) {
+      console.error(`读取设置失败：${settingsError.code ?? 'unknown'}`)
+      response.status(500).json({
+        error: '用户设置暂时无法读取，请稍后重试。',
+        code: 'SETTINGS_READ_FAILED',
+      })
+      return
+    }
+
+    if (!settings.modelName) {
+      response.status(503).json({
+        error: '默认模型名称尚未配置，请先在设置页填写。',
+        code: 'MODEL_NAME_MISSING',
+      })
+      return
+    }
+
     let reply = ''
 
     try {
-      reply = await requestModelReply(message)
+      reply = await requestModelReply(message, settings)
     } catch (_error) {
       console.error('模型请求未能完成')
       response.status(502).json({

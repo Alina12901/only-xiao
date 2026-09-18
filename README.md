@@ -2,7 +2,7 @@
 
 「森月居」是一个安静、清冷的私人 AI 聊天应用。AI 的名字是「枭」。
 
-当前版本：v0.4.0，已经接入 Supabase 会话与消息持久化。
+当前版本：v0.5.0，已经加入绑定用户的设置页。
 
 版本范围记录见 `CHANGELOG.md`。
 
@@ -13,7 +13,8 @@
 - React + Vite 前端
 - Node.js + Express 后端
 - 单用户 Supabase Auth 登录
-- `sessions` 与 `messages` 两张业务表
+- sessions、messages 与 settings 三张业务表
+- 设置页可修改系统提示词、默认模型、最大回复长度和温度
 - 会话和消息均由后端读写
 - 应用打开时加载会话列表
 - 新建会话、切换会话并加载历史
@@ -30,12 +31,12 @@
 - 后端 API Key 与 Supabase Secret Key 不进入前端
 - Claude 单次问答
 - 最大回复长度限制
+- 用户设置由 RLS 按所有者隔离
 
 明确不包含：
 
 - 记忆压缩
 - 长期记忆摘要
-- 设置表
 - 多模型切换
 - 多用户注册
 - 云端部署
@@ -62,7 +63,8 @@
 │  └─ package.json
 ├─ supabase/
 │  └─ migrations/
-│     └─ 202609180001_create_sessions_and_messages.sql
+│     ├─ 202609180001_create_sessions_and_messages.sql
+│     └─ 202609180002_create_settings.sql
 ├─ .gitignore
 ├─ CHANGELOG.md
 └─ README.md
@@ -80,6 +82,10 @@
 
 删除会话时，数据库会自动删除该会话下的所有消息。
 
+### `settings`
+
+每个用户最多一行设置，包含系统提示词、默认模型名称、最大回复长度、温度和更新时间。
+
 ## Supabase 首次设置
 
 ### 第一步：创建项目
@@ -92,12 +98,14 @@
 
 ```text
 G:\xiao\supabase\migrations\202609180001_create_sessions_and_messages.sql
+G:\xiao\supabase\migrations\202609180002_create_settings.sql
 ```
 
 迁移会创建：
 
 - `public.sessions`
 - `public.messages`
+- `public.settings`
 - 必要索引
 - RLS 策略
 - `authenticated` 角色的最小表权限
@@ -124,6 +132,7 @@ G:\xiao\backend\.env
 SUPABASE_URL=你的项目地址
 SUPABASE_PUBLISHABLE_KEY=你的可公开 Key
 SUPABASE_SECRET_KEY=你的 Secret Key
+MODEL_TEMPERATURE=1
 AUTH_COOKIE_SECURE=false
 ```
 
@@ -132,6 +141,7 @@ AUTH_COOKIE_SECURE=false
 - `SUPABASE_URL`：Supabase 项目地址。
 - `SUPABASE_PUBLISHABLE_KEY`：用于后端完成登录验证，属于可公开 Key，但仍然只放在后端。
 - `SUPABASE_SECRET_KEY`：高权限钥匙，只放后端环境变量。
+- `MODEL_TEMPERATURE`：后端默认温度，当前按 Claude 接口使用 `0` 到 `1`。
 - `AUTH_COOKIE_SECURE`：本地 HTTP 使用 `false`；部署到 HTTPS 后改为 `true`。
 
 不要把 Secret Key 发到聊天中，不要写入前端，不要提交到 Git。
@@ -139,7 +149,7 @@ AUTH_COOKIE_SECURE=false
 ## 权限设计
 
 - 浏览器只调用森月居后端。
-- 浏览器不直接读取 `sessions` 或 `messages`。
+- 浏览器不直接读取 `sessions`、`messages` 或 `settings`。
 - Supabase RLS 已开启。
 - 未登录用户没有表权限。
 - 登录用户只能访问 `owner_id` 等于自己用户 ID 的行。
@@ -147,6 +157,7 @@ AUTH_COOKIE_SECURE=false
 - 普通会话和消息请求使用用户令牌，由 RLS 限制权限。
 - Secret Key 不参与普通聊天请求。
 - `messages` 只允许读取和新增；删除会话时由数据库级联删除消息。
+- `settings` 每个用户最多一行，只能读取和修改自己的设置。
 - 数据库没有记忆压缩逻辑，也不保存长期摘要。
 
 ## 启动方法
@@ -202,6 +213,7 @@ npm run dev
 6. 点击另一个会话，再点击回来，确认历史消息正确加载。
 7. 删除该会话，确认左侧会话消失。
 8. 再刷新页面，确认被删除的会话没有恢复。
-9. 确认页面和数据库中都没有设置表、记忆压缩或长期摘要。
+9. 打开设置页，修改系统提示词和温度，保存后刷新确认仍保留。
+10. 确认页面和数据库中没有记忆压缩或长期摘要。
 
 第一次发送消息会调用模型服务，是否产生费用取决于你的模型平台和账户方案。

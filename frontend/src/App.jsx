@@ -119,8 +119,134 @@ function AuthScreen({
   )
 }
 
+function SettingsPanel({
+  error,
+  form,
+  isLoading,
+  isPersisted,
+  isSaving,
+  message,
+  onBack,
+  onChange,
+  onSubmit,
+}) {
+  return (
+    <section className="settings-view">
+      <header className="settings-header">
+        <div>
+          <p className="chat-eyebrow">私人配置</p>
+          <h2>设置</h2>
+        </div>
+        <button className="settings-back" type="button" onClick={onBack}>
+          返回对话
+        </button>
+      </header>
+
+      <div className="settings-body">
+        {isLoading ? (
+          <p className="settings-loading">正在加载设置……</p>
+        ) : (
+          <form className="settings-form" onSubmit={onSubmit}>
+            {!isPersisted && (
+              <p className="settings-warning" role="alert">
+                设置表尚未创建。当前显示后端默认值，暂时无法保存。
+              </p>
+            )}
+
+            <label className="settings-field">
+              <span>系统提示词</span>
+              <textarea
+                value={form.systemPrompt}
+                onChange={(event) =>
+                  onChange('systemPrompt', event.target.value)
+                }
+                rows="12"
+                disabled={isSaving}
+              />
+              <small>决定枭的角色、语气和回答边界。</small>
+            </label>
+
+            <label className="settings-field">
+              <span>默认模型名称</span>
+              <input
+                type="text"
+                value={form.modelName}
+                onChange={(event) => onChange('modelName', event.target.value)}
+                disabled={isSaving}
+              />
+              <small>填写模型平台提供的完整模型 ID。</small>
+            </label>
+
+            <div className="settings-grid">
+              <label className="settings-field">
+                <span>最大回复长度</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="512"
+                  step="1"
+                  value={form.maxReplyTokens}
+                  onChange={(event) =>
+                    onChange('maxReplyTokens', event.target.value)
+                  }
+                  disabled={isSaving}
+                />
+                <small>允许 1 到 512 tokens。</small>
+              </label>
+
+              <label className="settings-field">
+                <span>温度</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={form.temperature}
+                  onChange={(event) => onChange('temperature', event.target.value)}
+                  disabled={isSaving}
+                />
+                <small>
+                  当前按 Claude 接口使用 0 到 1；Thinking 模式可能要求 1。
+                </small>
+              </label>
+            </div>
+
+            {error && (
+              <p className="settings-error" role="alert">
+                {error}
+              </p>
+            )}
+
+            {message && <p className="settings-message">{message}</p>}
+
+            <button
+              className="settings-save"
+              type="submit"
+              disabled={isSaving || !isPersisted}
+            >
+              {isSaving ? '保存中' : '保存设置'}
+            </button>
+          </form>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function App() {
   const [authStatus, setAuthStatus] = useState('checking')
+  const [activeView, setActiveView] = useState('chat')
+  const [settingsForm, setSettingsForm] = useState({
+    systemPrompt: '',
+    modelName: '',
+    maxReplyTokens: 256,
+    temperature: 1,
+  })
+  const [isLoadingSettings, setIsLoadingSettings] = useState(false)
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
+  const [isSettingsPersisted, setIsSettingsPersisted] = useState(true)
+  const [settingsError, setSettingsError] = useState('')
+  const [settingsMessage, setSettingsMessage] = useState('')
   const [authError, setAuthError] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -261,6 +387,107 @@ function App() {
     }
   }
 
+  const loadSettings = async () => {
+    setIsLoadingSettings(true)
+    setSettingsError('')
+    setSettingsMessage('')
+
+    try {
+      const response = await apiRequest('/api/settings')
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok || !data.settings) {
+        throw new Error(data.error || '用户设置暂时无法读取。')
+      }
+
+      setSettingsForm(data.settings)
+      setIsSettingsPersisted(data.persisted !== false)
+
+      if (data.message) {
+        setSettingsMessage(data.message)
+      }
+    } catch (error) {
+      setSettingsError(
+        error instanceof Error ? error.message : '用户设置暂时无法读取。',
+      )
+    } finally {
+      setIsLoadingSettings(false)
+    }
+  }
+
+  const handleSettingsChange = (field, value) => {
+    setSettingsForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
+    setSettingsError('')
+    setSettingsMessage('')
+  }
+
+  const handleSettingsSave = async (event) => {
+    event.preventDefault()
+    setSettingsError('')
+    setSettingsMessage('')
+
+    const maxReplyTokens = Number.parseInt(
+      String(settingsForm.maxReplyTokens),
+      10,
+    )
+    const temperature = Number.parseFloat(String(settingsForm.temperature))
+
+    if (!settingsForm.systemPrompt.trim()) {
+      setSettingsError('系统提示词不能为空。')
+      return
+    }
+
+    if (!settingsForm.modelName.trim()) {
+      setSettingsError('默认模型名称不能为空。')
+      return
+    }
+
+    if (
+      !Number.isInteger(maxReplyTokens) ||
+      maxReplyTokens < 1 ||
+      maxReplyTokens > 512
+    ) {
+      setSettingsError('最大回复长度必须是 1 到 512 之间的整数。')
+      return
+    }
+
+    if (!Number.isFinite(temperature) || temperature < 0 || temperature > 1) {
+      setSettingsError('温度必须是 0 到 1 之间的数字。')
+      return
+    }
+
+    setIsSavingSettings(true)
+
+    try {
+      const response = await apiRequest('/api/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          systemPrompt: settingsForm.systemPrompt.trim(),
+          modelName: settingsForm.modelName.trim(),
+          maxReplyTokens,
+          temperature,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok || !data.settings) {
+        throw new Error(data.error || '设置保存失败，请稍后重试。')
+      }
+
+      setSettingsForm(data.settings)
+      setIsSettingsPersisted(true)
+      setSettingsMessage(data.message || '设置已保存。')
+    } catch (error) {
+      setSettingsError(
+        error instanceof Error ? error.message : '设置保存失败，请稍后重试。',
+      )
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }
   useEffect(() => {
     void refreshSession()
   }, [])
@@ -270,6 +497,12 @@ function App() {
       void loadSessions()
     }
   }, [authStatus])
+
+  useEffect(() => {
+    if (authStatus === 'authenticated' && activeView === 'settings') {
+      void loadSettings()
+    }
+  }, [authStatus, activeView])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -321,6 +554,9 @@ function App() {
     setActiveId(null)
     setDraft('')
     setNotice('')
+    setActiveView('chat')
+    setSettingsError('')
+    setSettingsMessage('')
     setAuthStatus('signedOut')
   }
 
@@ -661,6 +897,17 @@ function App() {
           <p className="sidebar-note">
             已登录：{user?.email ?? '当前用户'}
           </p>
+          <button
+            className={`settings-button${activeView === 'settings' ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => {
+              setActiveView('settings')
+              setNotice('')
+            }}
+            aria-current={activeView === 'settings' ? 'page' : undefined}
+          >
+            设置
+          </button>
           <button className="logout-button" type="button" onClick={handleLogout}>
             退出登录
           </button>
@@ -668,6 +915,20 @@ function App() {
       </aside>
 
       <main className="chat-panel">
+      {activeView === 'settings' ? (
+        <SettingsPanel
+          error={settingsError}
+          form={settingsForm}
+          isLoading={isLoadingSettings}
+          isPersisted={isSettingsPersisted}
+          isSaving={isSavingSettings}
+          message={settingsMessage}
+          onBack={() => setActiveView('chat')}
+          onChange={handleSettingsChange}
+          onSubmit={handleSettingsSave}
+        />
+      ) : (
+        <>
         <header className="chat-header">
           <div>
             <p className="chat-eyebrow">与枭的对话</p>
@@ -781,6 +1042,8 @@ function App() {
             会话和消息只保存在 Supabase；当前仍不保存长期记忆或多轮上下文。
           </p>
         </section>
+        </>
+      )}
       </main>
       {renameSession && (
         <div
