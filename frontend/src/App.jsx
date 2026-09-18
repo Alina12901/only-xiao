@@ -126,10 +126,23 @@ function SettingsPanel({
   isPersisted,
   isSaving,
   message,
+  providerApiKey,
+  providerMessage,
+  providerModels,
+  providers,
+  isConnectingProvider,
+  onProviderChange,
+  onProviderKeyChange,
+  onConnectProvider,
+  onDisconnectProvider,
+  onRefreshModels,
   onBack,
   onChange,
   onSubmit,
 }) {
+  const selectedProvider = providers.find(
+    (provider) => provider.id === form.provider,
+  )
   return (
     <section className="settings-view">
       <header className="settings-header">
@@ -164,17 +177,94 @@ function SettingsPanel({
                 disabled={isSaving}
               />
               <small>决定枭的角色、语气和回答边界。</small>
-            </label>
+            </label>            <div className="provider-card">
+              <label className="settings-field">
+                <span>模型供应商</span>
+                <select
+                  value={form.provider}
+                  onChange={(event) => onProviderChange(event.target.value)}
+                  disabled={isSaving || isConnectingProvider}
+                >
+                  {providers.map((provider) => (
+                    <option value={provider.id} key={provider.id}>
+                      {provider.label}
+                      {provider.connected ? ' · 已连接' : ''}
+                    </option>
+                  ))}
+                </select>
+                <small>供应商地址由后端维护，前端不能填写任意地址。</small>
+              </label>
+
+              {selectedProvider?.credentialSource === 'stored' &&
+                !selectedProvider.connected && (
+                  <div className="provider-connect">
+                    <label className="settings-field">
+                      <span>API Key</span>
+                      <input
+                        type="password"
+                        value={providerApiKey}
+                        onChange={(event) =>
+                          onProviderKeyChange(event.target.value)
+                        }
+                        placeholder="只发送到后端，不会回显"
+                        disabled={isConnectingProvider}
+                      />
+                    </label>
+                    <button
+                      className="provider-button"
+                      type="button"
+                      onClick={onConnectProvider}
+                      disabled={isConnectingProvider || !providerApiKey.trim()}
+                    >
+                      {isConnectingProvider ? '连接中' : '连接并拉取模型'}
+                    </button>
+                  </div>
+                )}
+
+              {selectedProvider?.connected && (
+                <div className="provider-connected">
+                  <span>已连接</span>
+                  {selectedProvider.credentialSource === 'stored' && (
+                    <button
+                      type="button"
+                      onClick={onDisconnectProvider}
+                      disabled={isConnectingProvider}
+                    >
+                      删除 Key
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onRefreshModels}
+                    disabled={isConnectingProvider}
+                  >
+                    刷新模型
+                  </button>
+                </div>
+              )}
+
+              {providerMessage && (
+                <p className="provider-message">{providerMessage}</p>
+              )}
+            </div>
 
             <label className="settings-field">
-              <span>默认模型名称</span>
-              <input
-                type="text"
+              <span>默认模型</span>
+              <select
                 value={form.modelName}
                 onChange={(event) => onChange('modelName', event.target.value)}
-                disabled={isSaving}
-              />
-              <small>填写模型平台提供的完整模型 ID。</small>
+                disabled={isSaving || !providerModels.length}
+              >
+                {!providerModels.length && (
+                  <option value="">请先连接供应商并拉取模型</option>
+                )}
+                {providerModels.map((model) => (
+                  <option value={model.id} key={model.id}>
+                    {model.label} ({model.id})
+                  </option>
+                ))}
+              </select>
+              <small>只能选择该供应商官方返回的模型。</small>
             </label>
 
             <div className="settings-grid">
@@ -237,6 +327,7 @@ function App() {
   const [authStatus, setAuthStatus] = useState('checking')
   const [activeView, setActiveView] = useState('chat')
   const [settingsForm, setSettingsForm] = useState({
+    provider: 'gateway',
     systemPrompt: '',
     modelName: '',
     maxReplyTokens: 256,
@@ -247,6 +338,11 @@ function App() {
   const [isSettingsPersisted, setIsSettingsPersisted] = useState(true)
   const [settingsError, setSettingsError] = useState('')
   const [settingsMessage, setSettingsMessage] = useState('')
+  const [providers, setProviders] = useState([])
+  const [providerModels, setProviderModels] = useState([])
+  const [providerApiKey, setProviderApiKey] = useState('')
+  const [isConnectingProvider, setIsConnectingProvider] = useState(false)
+  const [providerMessage, setProviderMessage] = useState('')
   const [authError, setAuthError] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -402,6 +498,7 @@ function App() {
 
       setSettingsForm(data.settings)
       setIsSettingsPersisted(data.persisted !== false)
+      await loadProviderCatalog(data.settings.provider)
 
       if (data.message) {
         setSettingsMessage(data.message)
@@ -415,6 +512,180 @@ function App() {
     }
   }
 
+  const loadProviderModels = async (providerId) => {
+    setProviderMessage('')
+    setProviderModels([])
+
+    try {
+      const response = await apiRequest(`/api/providers/${providerId}/models`)
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data.error || '模型列表暂时无法加载。')
+      }
+
+      const models = data.models ?? []
+      setProviderModels(models)
+      setSettingsForm((current) => {
+        const modelExists = models.some(
+          (model) => model.id === current.modelName,
+        )
+
+        return modelExists
+          ? current
+          : {
+              ...current,
+              modelName: models[0]?.id ?? '',
+            }
+      })
+      setProviderMessage(`已拉取 ${models.length} 个模型。`)
+    } catch (error) {
+      setProviderMessage(
+        error instanceof Error ? error.message : '模型列表暂时无法加载。',
+      )
+    }
+  }
+
+  const loadProviderCatalog = async (preferredProvider) => {
+    try {
+      const response = await apiRequest('/api/providers')
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok || !Array.isArray(data.providers)) {
+        throw new Error(data.error || '供应商列表暂时无法加载。')
+      }
+
+      setProviders(data.providers)
+      const selected =
+        data.providers.find((provider) => provider.id === preferredProvider) ??
+        data.providers[0]
+
+      if (!selected) {
+        return
+      }
+
+      setSettingsForm((current) => ({
+        ...current,
+        provider: selected.id,
+      }))
+
+      if (selected.connected) {
+        await loadProviderModels(selected.id)
+      }
+    } catch (error) {
+      setSettingsError(
+        error instanceof Error ? error.message : '供应商列表暂时无法加载。',
+      )
+    }
+  }
+
+  const handleProviderChange = async (providerId) => {
+    setSettingsForm((current) => ({
+      ...current,
+      provider: providerId,
+      modelName: '',
+    }))
+    setProviderModels([])
+    setProviderApiKey('')
+    setProviderMessage('')
+
+    const provider = providers.find((item) => item.id === providerId)
+
+    if (provider?.connected) {
+      await loadProviderModels(providerId)
+    }
+  }
+
+  const handleConnectProvider = async () => {
+    const providerId = settingsForm.provider
+    const apiKey = providerApiKey.trim()
+
+    if (
+      !providers.find((provider) => provider.id === providerId) ||
+      !apiKey
+    ) {
+      setProviderMessage('请选择供应商并填写 API Key。')
+      return
+    }
+
+    setIsConnectingProvider(true)
+    setProviderMessage('')
+
+    try {
+      const response = await apiRequest(
+        `/api/providers/${providerId}/connect`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ apiKey }),
+        },
+      )
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data.error || '供应商连接失败。')
+      }
+
+      const models = data.models ?? []
+      setProviderModels(models)
+      setProviderApiKey('')
+      setProviderMessage(data.message || '连接成功。')
+      setProviders((current) =>
+        current.map((provider) =>
+          provider.id === providerId
+            ? { ...provider, connected: true }
+            : provider,
+        ),
+      )
+      setSettingsForm((current) => ({
+        ...current,
+        modelName: models[0]?.id ?? '',
+      }))
+    } catch (error) {
+      setProviderMessage(
+        error instanceof Error ? error.message : '供应商连接失败。',
+      )
+    } finally {
+      setIsConnectingProvider(false)
+    }
+  }
+
+  const handleDisconnectProvider = async () => {
+    const providerId = settingsForm.provider
+
+    if (!window.confirm('删除这个供应商已保存的 API Key？')) {
+      return
+    }
+
+    try {
+      const response = await apiRequest(`/api/providers/${providerId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || '供应商断开失败。')
+      }
+
+      setProviders((current) =>
+        current.map((provider) =>
+          provider.id === providerId
+            ? { ...provider, connected: false }
+            : provider,
+        ),
+      )
+      setProviderModels([])
+      setProviderApiKey('')
+      setProviderMessage('已删除该供应商的 API Key。')
+      setSettingsForm((current) => ({
+        ...current,
+        modelName: '',
+      }))
+    } catch (error) {
+      setProviderMessage(
+        error instanceof Error ? error.message : '供应商断开失败。',
+      )
+    }
+  }
   const handleSettingsChange = (field, value) => {
     setSettingsForm((current) => ({
       ...current,
@@ -923,6 +1194,16 @@ function App() {
           isPersisted={isSettingsPersisted}
           isSaving={isSavingSettings}
           message={settingsMessage}
+          providerApiKey={providerApiKey}
+          providerMessage={providerMessage}
+          providerModels={providerModels}
+          providers={providers}
+          isConnectingProvider={isConnectingProvider}
+          onProviderChange={handleProviderChange}
+          onProviderKeyChange={setProviderApiKey}
+          onConnectProvider={handleConnectProvider}
+          onDisconnectProvider={handleDisconnectProvider}
+          onRefreshModels={() => loadProviderModels(settingsForm.provider)}
           onBack={() => setActiveView('chat')}
           onChange={handleSettingsChange}
           onSubmit={handleSettingsSave}

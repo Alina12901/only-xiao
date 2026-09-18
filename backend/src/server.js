@@ -2,6 +2,19 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
+import {
+  deleteProviderCredential,
+  getProviderCredential,
+  isCredentialEncryptionConfigured,
+  listConnectedOfficialProviders,
+  saveProviderCredential,
+} from './credentials.js'
+import {
+  getProviderCatalog,
+  getProviderDefinition,
+  listProviderModels,
+  requestProviderReply,
+} from './providers.js'
 import express from 'express'
 
 const app = express()
@@ -206,6 +219,7 @@ async function getOwnedSession(client, sessionId, ownerId) {
 
 function mapSettings(row) {
   return {
+    provider: row.provider || 'gateway',
     systemPrompt: row.system_prompt,
     modelName: row.model_name,
     maxReplyTokens: row.max_reply_tokens,
@@ -216,6 +230,7 @@ function mapSettings(row) {
 
 function getDefaultSettings() {
   return {
+    provider: 'gateway',
     systemPrompt: modelSystemPrompt,
     modelName,
     maxReplyTokens: modelMaxTokens,
@@ -223,6 +238,18 @@ function getDefaultSettings() {
   }
 }
 
+function isMissingProviderSchema(error) {
+  return error?.code === '42703' && (error?.message ?? '').includes('provider')
+}
+
+function isMissingProviderCredentialsTable(error) {
+  const message = error?.message ?? ''
+  return (
+    error?.code === '42P01' ||
+    error?.code === 'PGRST205' ||
+    message.includes('public.provider_credentials')
+  )
+}
 function isMissingSettingsTable(error) {
   const message = error?.message ?? ''
   return (
@@ -236,13 +263,13 @@ async function getOrCreateUserSettings(client, userId) {
   const { data, error } = await client
     .from('settings')
     .select(
-      'system_prompt, model_name, max_reply_tokens, temperature, updated_at',
+      'provider, system_prompt, model_name, max_reply_tokens, temperature, updated_at',
     )
     .eq('owner_id', userId)
     .maybeSingle()
 
   if (error) {
-    if (isMissingSettingsTable(error)) {
+    if (isMissingSettingsTable(error) || isMissingProviderSchema(error)) {
       return {
         settings: getDefaultSettings(),
         persisted: false,
@@ -264,18 +291,19 @@ async function getOrCreateUserSettings(client, userId) {
     .from('settings')
     .insert({
       owner_id: userId,
+      provider: defaults.provider,
       system_prompt: defaults.systemPrompt,
       model_name: defaults.modelName,
       max_reply_tokens: defaults.maxReplyTokens,
       temperature: defaults.temperature,
     })
     .select(
-      'system_prompt, model_name, max_reply_tokens, temperature, updated_at',
+      'provider, system_prompt, model_name, max_reply_tokens, temperature, updated_at',
     )
     .single()
 
   if (createError) {
-    if (isMissingSettingsTable(createError)) {
+    if (isMissingSettingsTable(createError) || isMissingProviderSchema(createError)) {
       return {
         settings: defaults,
         persisted: false,
@@ -286,7 +314,7 @@ async function getOrCreateUserSettings(client, userId) {
       const { data: existing, error: existingError } = await client
         .from('settings')
         .select(
-          'system_prompt, model_name, max_reply_tokens, temperature, updated_at',
+          'provider, system_prompt, model_name, max_reply_tokens, temperature, updated_at',
         )
         .eq('owner_id', userId)
         .maybeSingle()
@@ -311,53 +339,6 @@ async function getOrCreateUserSettings(client, userId) {
     persisted: true,
   }
 }
-async function requestModelReply(message, settings) {
-  const modelResponse = await fetch(modelEndpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${modelApiKey}`,
-    },
-    body: JSON.stringify({
-      model: settings.modelName,
-      messages: [
-        {
-          role: 'system',
-            content: settings.systemPrompt,
-        },
-        {
-          role: 'user',
-          content: message,
-        },
-      ],
-      max_tokens: settings.maxReplyTokens,
-      temperature: settings.temperature,
-      stream: false,
-    }),
-    signal: AbortSignal.timeout(60000),
-  })
-
-  if (!modelResponse.ok) {
-    const providerError = await modelResponse.text()
-    const safeProviderError = providerError
-      .replaceAll(modelApiKey, '[redacted]')
-      .slice(0, 500)
-    console.error(
-      `模型请求失败，HTTP ${modelResponse.status}：${safeProviderError}`,
-    )
-    throw new Error('模型服务返回错误')
-  }
-
-  const data = await modelResponse.json()
-  const reply = data?.choices?.[0]?.message?.content
-
-  if (typeof reply !== 'string' || !reply.trim()) {
-    throw new Error('模型响应中没有文本内容')
-  }
-
-  return reply.trim()
-}
-
 app.get('/', (_request, response) => {
   response.json({
     app: '森月居',
@@ -380,6 +361,8 @@ app.get('/api/health', (_request, response) => {
     databaseConfigured,
     secretKeyConfigured: Boolean(supabaseSecretKey),
     authRequired: true,
+    multiProvider: true,
+    credentialEncryptionConfigured: isCredentialEncryptionConfigured(),
     memoryEnabled: false,
   })
 })
@@ -480,6 +463,211 @@ app.post('/api/auth/logout', (_request, response) => {
   response.status(204).end()
 })
 
+app.get('/api/providers', requireUser, async (request, response) => {
+  const catalog = getProviderCatalog()
+  let connectedProviders = new Set()
+
+  if (
+    catalog.some((provider) => provider.credentialSource === 'stored')
+  ) {
+    const result = await listConnectedOfficialProviders(
+      request.db,
+      request.user.id,
+    )
+
+    if (result.error && !isMissingProviderCredentialsTable(result.error)) {
+      console.error(`读取供应商状态失败：${result.error.code ?? 'unknown'}`)
+      response.status(500).json({
+        error: '供应商状态暂时无法读取，请稍后重试。',
+      })
+      return
+    }
+
+    connectedProviders = result.providers ?? new Set()
+  }
+
+  response.json({
+    providers: catalog.map((provider) => ({
+      id: provider.id,
+      label: provider.label,
+      credentialSource: provider.credentialSource,
+      connected:
+        provider.credentialSource === 'environment'
+          ? Boolean(modelApiKey && modelEndpoint)
+          : connectedProviders.has(provider.id),
+    })),
+  })
+})
+
+app.post(
+  '/api/providers/:provider/connect',
+  requireUser,
+  async (request, response) => {
+    const provider = getProviderDefinition(request.params.provider)
+
+    if (!provider || provider.credentialSource !== 'stored') {
+      response.status(400).json({
+        error: '不支持连接这个模型供应商。',
+      })
+      return
+    }
+
+    if (!isCredentialEncryptionConfigured()) {
+      response.status(503).json({
+        error: '后端凭据加密尚未配置。',
+      })
+      return
+    }
+
+    const apiKey =
+      typeof request.body?.apiKey === 'string'
+        ? request.body.apiKey.trim()
+        : ''
+
+    if (!apiKey) {
+      response.status(400).json({
+        error: '请输入该供应商的 API Key。',
+      })
+      return
+    }
+
+    let models = []
+
+    try {
+      models = await listProviderModels(provider.id, apiKey)
+    } catch (_error) {
+      response.status(502).json({
+        error: '连接失败，请检查 API Key 和账号权限。',
+      })
+      return
+    }
+
+    const { error } = await saveProviderCredential(
+      request.db,
+      request.user.id,
+      provider.id,
+      apiKey,
+    )
+
+    if (error) {
+      if (isMissingProviderCredentialsTable(error)) {
+        response.status(503).json({
+          error: '供应商凭据表尚未创建，请先执行数据库迁移。',
+        })
+        return
+      }
+
+      console.error(`保存供应商凭据失败：${error.code ?? 'unknown'}`)
+      response.status(500).json({
+        error: 'API Key 验证成功，但暂时无法安全保存。',
+      })
+      return
+    }
+
+    response.json({
+      provider: {
+        id: provider.id,
+        label: provider.label,
+      },
+      models,
+      message: '连接成功，已安全保存凭据。',
+    })
+  },
+)
+
+app.get(
+  '/api/providers/:provider/models',
+  requireUser,
+  async (request, response) => {
+    const provider = getProviderDefinition(request.params.provider)
+
+    if (!provider) {
+      response.status(400).json({
+        error: '不支持这个模型供应商。',
+      })
+      return
+    }
+
+    let apiKey = modelApiKey
+
+    if (provider.credentialSource === 'stored') {
+      const result = await getProviderCredential(
+        request.db,
+        request.user.id,
+        provider.id,
+      )
+
+      if (result.error) {
+        if (isMissingProviderCredentialsTable(result.error)) {
+          response.status(503).json({
+            error: '供应商凭据表尚未创建，请先执行数据库迁移。',
+          })
+          return
+        }
+
+        response.status(500).json({
+          error: '供应商凭据暂时无法读取。',
+        })
+        return
+      }
+
+      apiKey = result.credential || ''
+    }
+
+    if (!apiKey) {
+      response.status(400).json({
+        error: '请先连接这个模型供应商。',
+      })
+      return
+    }
+
+    try {
+      const models = await listProviderModels(provider.id, apiKey)
+      response.json({ models })
+    } catch (_error) {
+      response.status(502).json({
+        error: '无法拉取模型列表，请稍后重试。',
+      })
+    }
+  },
+)
+
+app.delete(
+  '/api/providers/:provider',
+  requireUser,
+  async (request, response) => {
+    const provider = getProviderDefinition(request.params.provider)
+
+    if (!provider || provider.credentialSource !== 'stored') {
+      response.status(400).json({
+        error: '不能删除这个供应商配置。',
+      })
+      return
+    }
+
+    const { error } = await deleteProviderCredential(
+      request.db,
+      request.user.id,
+      provider.id,
+    )
+
+    if (error) {
+      if (isMissingProviderCredentialsTable(error)) {
+        response.status(503).json({
+          error: '供应商凭据表尚未创建。',
+        })
+        return
+      }
+
+      response.status(500).json({
+        error: '供应商凭据删除失败，请稍后重试。',
+      })
+      return
+    }
+
+    response.status(204).end()
+  },
+)
 app.get('/api/settings', requireUser, async (request, response) => {
   const { settings, persisted, error } = await getOrCreateUserSettings(
     request.db,
@@ -525,6 +713,10 @@ app.patch('/api/settings', requireUser, async (request, response) => {
   }
 
   const current = currentResult.settings
+  const provider =
+    typeof request.body?.provider === 'string'
+      ? request.body.provider.trim()
+      : current.provider || 'gateway'
   const systemPrompt =
     typeof request.body?.systemPrompt === 'string'
       ? request.body.systemPrompt.trim()
@@ -555,6 +747,15 @@ app.patch('/api/settings', requireUser, async (request, response) => {
     return
   }
 
+  const providerDefinition = getProviderDefinition(provider)
+
+  if (!providerDefinition) {
+    response.status(400).json({
+      error: '不支持所选模型供应商。',
+    })
+    return
+  }
+
   if (!modelName) {
     response.status(400).json({
       error: '默认模型名称不能为空。',
@@ -565,6 +766,51 @@ app.patch('/api/settings', requireUser, async (request, response) => {
   if (modelName.length > 200) {
     response.status(400).json({
       error: '默认模型名称不能超过 200 个字符。',
+    })
+    return
+  }
+
+  let providerApiKey = modelApiKey
+
+  if (providerDefinition.credentialSource === 'stored') {
+    const credentialResult = await getProviderCredential(
+      request.db,
+      request.user.id,
+      provider,
+    )
+
+    if (credentialResult.error) {
+      console.error('读取供应商凭据失败')
+      response.status(500).json({
+        error: '供应商凭据暂时无法读取，请稍后重试。',
+      })
+      return
+    }
+
+    providerApiKey = credentialResult.credential || ''
+  }
+
+  if (!providerApiKey) {
+    response.status(400).json({
+      error: '请先在设置页连接所选模型供应商。',
+    })
+    return
+  }
+
+  let availableModels = []
+
+  try {
+    availableModels = await listProviderModels(provider.id, providerApiKey)
+  } catch (_error) {
+    response.status(502).json({
+      error: '无法读取该供应商的模型列表，请检查 API Key。',
+    })
+    return
+  }
+
+  if (!availableModels.some((model) => model.id === modelName)) {
+    response.status(400).json({
+      error: '所选模型不在该供应商返回的模型列表中。',
     })
     return
   }
@@ -595,6 +841,7 @@ app.patch('/api/settings', requireUser, async (request, response) => {
     .from('settings')
     .update({
       system_prompt: systemPrompt,
+      provider,
       model_name: modelName,
       max_reply_tokens: maxReplyTokens,
       temperature,
@@ -602,7 +849,7 @@ app.patch('/api/settings', requireUser, async (request, response) => {
     })
     .eq('owner_id', request.user.id)
     .select(
-      'system_prompt, model_name, max_reply_tokens, temperature, updated_at',
+      'provider, system_prompt, model_name, max_reply_tokens, temperature, updated_at',
     )
     .single()
 
@@ -732,14 +979,7 @@ app.post(
       return
     }
 
-    if (!isModelConfigured) {
-      response.status(503).json({
-        error: '模型尚未配置，暂时不能回复消息。',
-      })
-      return
-    }
-
-    const message =
+const message =
       typeof request.body?.message === 'string'
         ? request.body.message.trim()
         : ''
@@ -803,10 +1043,56 @@ app.post(
       return
     }
 
+    const provider = getProviderDefinition(settings.provider || 'gateway')
+
+    if (!provider) {
+      response.status(400).json({
+        error: '当前设置中的模型供应商不受支持。',
+        code: 'PROVIDER_NOT_ALLOWED',
+      })
+      return
+    }
+
+    let providerApiKey = modelApiKey
+
+    if (provider.credentialSource === 'stored') {
+      const credentialResult = await getProviderCredential(
+        request.db,
+        request.user.id,
+        provider.id,
+      )
+
+      if (credentialResult.error) {
+        response.status(500).json({
+          error: '供应商凭据暂时无法读取，请稍后重试。',
+          code: 'PROVIDER_CREDENTIAL_FAILED',
+        })
+        return
+      }
+
+      providerApiKey = credentialResult.credential || ''
+    }
+
+    if (!providerApiKey) {
+      response.status(503).json({
+        error: '请先在设置页连接当前模型供应商。',
+        code: 'PROVIDER_NOT_CONNECTED',
+      })
+      return
+    }
+
     let reply = ''
 
     try {
-      reply = await requestModelReply(message, settings)
+      reply = await requestProviderReply({
+        providerId: provider.id,
+        apiKey: providerApiKey,
+        modelName: settings.modelName,
+        systemPrompt: settings.systemPrompt,
+        message,
+        maxReplyTokens: settings.maxReplyTokens,
+        temperature: settings.temperature,
+      })
     } catch (_error) {
       console.error('模型请求未能完成')
       response.status(502).json({

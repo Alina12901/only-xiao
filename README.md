@@ -2,7 +2,7 @@
 
 「森月居」是一个安静、清冷的私人 AI 聊天应用。AI 的名字是「枭」。
 
-当前版本：v0.5.0，已经加入绑定用户的设置页。
+当前版本：v0.6.0，已经加入官方模型供应商适配与加密密钥存储。
 
 版本范围记录见 `CHANGELOG.md`。
 
@@ -15,6 +15,9 @@
 - 单用户 Supabase Auth 登录
 - sessions、messages 与 settings 三张业务表
 - 设置页可修改系统提示词、默认模型、最大回复长度和温度
+- 支持 OpenAI、Anthropic、DeepSeek 官方 API
+- 支持输入供应商 API Key、测试连接并拉取模型列表
+- 供应商 API Key 加密后保存，前端不会回显
 - 会话和消息均由后端读写
 - 应用打开时加载会话列表
 - 新建会话、切换会话并加载历史
@@ -56,6 +59,8 @@
 │  └─ vite.config.js
 ├─ backend/                  Node.js + Express 后端
 │  ├─ src/server.js          认证、聊天和持久化接口
+│  ├─ src/providers.js       官方模型供应商适配层
+│  ├─ src/credentials.js     供应商密钥加密与读取
 │  ├─ config/
 │  │  └─ system-prompt.txt   仅后端读取的系统提示词
 │  ├─ .env.example           环境变量模板，不含真实值
@@ -64,7 +69,8 @@
 ├─ supabase/
 │  └─ migrations/
 │     ├─ 202609180001_create_sessions_and_messages.sql
-│     └─ 202609180002_create_settings.sql
+│     ├─ 202609180002_create_settings.sql
+│     └─ 202609180003_add_multi_provider.sql
 ├─ .gitignore
 ├─ CHANGELOG.md
 └─ README.md
@@ -86,6 +92,10 @@
 
 每个用户最多一行设置，包含系统提示词、默认模型名称、最大回复长度、温度和更新时间。
 
+### `provider_credentials`
+
+保存用户输入的官方供应商 API Key，只存加密结果、随机向量和校验值。前端不能读取完整 Key。
+
 ## Supabase 首次设置
 
 ### 第一步：创建项目
@@ -99,6 +109,7 @@
 ```text
 G:\xiao\supabase\migrations\202609180001_create_sessions_and_messages.sql
 G:\xiao\supabase\migrations\202609180002_create_settings.sql
+G:\xiao\supabase\migrations\202609180003_add_multi_provider.sql
 ```
 
 迁移会创建：
@@ -106,6 +117,7 @@ G:\xiao\supabase\migrations\202609180002_create_settings.sql
 - `public.sessions`
 - `public.messages`
 - `public.settings`
+- `public.provider_credentials`
 - 必要索引
 - RLS 策略
 - `authenticated` 角色的最小表权限
@@ -129,6 +141,7 @@ G:\xiao\backend\.env
 填写：
 
 ```env
+CREDENTIAL_ENCRYPTION_KEY=后端加密主密钥
 SUPABASE_URL=你的项目地址
 SUPABASE_PUBLISHABLE_KEY=你的可公开 Key
 SUPABASE_SECRET_KEY=你的 Secret Key
@@ -138,6 +151,7 @@ AUTH_COOKIE_SECURE=false
 
 说明：
 
+- `CREDENTIAL_ENCRYPTION_KEY`：后端生成和保存的加密主密钥，用于加密供应商 API Key。
 - `SUPABASE_URL`：Supabase 项目地址。
 - `SUPABASE_PUBLISHABLE_KEY`：用于后端完成登录验证，属于可公开 Key，但仍然只放在后端。
 - `SUPABASE_SECRET_KEY`：高权限钥匙，只放后端环境变量。
@@ -149,7 +163,7 @@ AUTH_COOKIE_SECURE=false
 ## 权限设计
 
 - 浏览器只调用森月居后端。
-- 浏览器不直接读取 `sessions`、`messages` 或 `settings`。
+- 浏览器不直接读取 `sessions`、`messages`、`settings` 或 `provider_credentials`。
 - Supabase RLS 已开启。
 - 未登录用户没有表权限。
 - 登录用户只能访问 `owner_id` 等于自己用户 ID 的行。
@@ -158,6 +172,7 @@ AUTH_COOKIE_SECURE=false
 - Secret Key 不参与普通聊天请求。
 - `messages` 只允许读取和新增；删除会话时由数据库级联删除消息。
 - `settings` 每个用户最多一行，只能读取和修改自己的设置。
+- `provider_credentials` 只保存加密后的供应商 API Key，后端不回传完整 Key。
 - 数据库没有记忆压缩逻辑，也不保存长期摘要。
 
 ## 启动方法
@@ -199,6 +214,8 @@ npm run dev
 - `databaseConfigured`: Supabase 后端变量完整时应为 `true`
 - `secretKeyConfigured`: Secret Key 已填写时应为 `true`
 - `authRequired`: 应为 `true`
+- `multiProvider`: 应为 `true`
+- `credentialEncryptionConfigured`: 应为 `true`
 - `memoryEnabled`: 应为 `false`
 
 健康检查不会发起模型请求，也不会产生模型费用。
@@ -213,7 +230,8 @@ npm run dev
 6. 点击另一个会话，再点击回来，确认历史消息正确加载。
 7. 删除该会话，确认左侧会话消失。
 8. 再刷新页面，确认被删除的会话没有恢复。
-9. 打开设置页，修改系统提示词和温度，保存后刷新确认仍保留。
-10. 确认页面和数据库中没有记忆压缩或长期摘要。
+9. 在设置页连接一个官方供应商，确认能够拉取模型列表。
+10. 选择允许列表中的模型并保存，刷新确认设置仍保留。
+11. 确认页面和数据库中没有记忆压缩或长期摘要。
 
 第一次发送消息会调用模型服务，是否产生费用取决于你的模型平台和账户方案。
