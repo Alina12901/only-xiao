@@ -1,0 +1,53 @@
+:root {
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  color: #40536a;
+  background: #e9eff7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(255, 193, 218, 0.5), transparent 31%),
+    radial-gradient(circle at 92% 7%, rgba(153, 202, 244, 0.58), transparent 34%),
+    linear-gradient(135deg, #edf3fa 0%, #e6edf7 48%, #f4ebf3 100%);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(255, 193, 218, 0.5), transparent 31%),
+    radial-gradient(circle at 92% 7%, rgba(153, 202, 244, 0.58), transparent 34%),
+    linear-gradient(135deg, #edf3fa 0%, #e6edf7 48%, #f4ebf3 100%);
+  background-attachment: fixed;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+button:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(103, 153, 202, 0.8);
+  outline-offset: 3px;
+}
+
+::selection {
+  color: #253b54;
+  background: #c9dff5;
+}
