@@ -1,113 +1,114 @@
 # 森月居
 
-「森月居」是一个安静、清冷的私人 AI 聊天应用。AI 的名字是「枭」。
+## 项目是什么
 
-当前版本：v0.7.0，已经加入可配置的第三方 API 地址、密钥和模型拉取。
+森月居是一个私人 AI 聊天应用，AI 角色名称是「枭」。
 
-版本范围记录见 `CHANGELOG.md`。
+当前版本支持：
 
-## 当前范围
+- 单用户登录
+- 会话和消息持久化
+- 会话重命名、切换和删除
+- 单次问答
+- OpenAI、Anthropic、DeepSeek 官方 API
+- 一个可随时重配的自定义第三方 API
+- 从供应商拉取模型并选择默认模型
+- 后端加密保存供应商 API Key
 
-已完成：
+当前版本：v0.7.0。详细版本记录见 `CHANGELOG.md`。
 
-- React + Vite 前端
-- Node.js + Express 后端
-- 单用户 Supabase Auth 登录
-- sessions、messages 与 settings 三张业务表
-- 设置页可修改系统提示词、默认模型、最大回复长度和温度
-- 支持 OpenAI、Anthropic、DeepSeek 官方 API
-- 支持输入供应商 API Key、测试连接并拉取模型列表
-- 支持一个可随时重配的第三方 API 地址
-- 第三方 API 地址只允许 HTTPS 公网地址
-- 供应商 API Key 加密后保存，前端不会回显
-- 会话和消息均由后端读写
-- 应用打开时加载会话列表
-- 新建会话、切换会话并加载历史
-- 使用应用内对话框重命名会话
-- 删除前二次确认，删除后自动切换或回到欢迎页
-- 用户消息发送后立即显示
-- 随后异步等待枭的回复
-- 等待期间锁定输入和发送按钮，避免重复请求
-- 回复失败后恢复原输入，可直接重试
-- 新消息出现时自动滚动到合适位置
-- 长消息、分段文字和代码可以自动换行
-- Supabase RLS 所有者隔离
-- 前端只在内存中保存访问令牌
-- 后端 API Key 与 Supabase Secret Key 不进入前端
-- Claude 单次问答
-- 最大回复长度限制
-- 用户设置由 RLS 按所有者隔离
+## 目录位置
 
-明确不包含：
-
-- 记忆压缩
-- 长期记忆摘要
-- 多模型切换
-- 多用户注册
-- 云端部署
-
-## 项目结构
+项目根目录：
 
 ```text
-森月居/
-├─ frontend/                 React + Vite 前端
-│  ├─ src/
-│  │  ├─ App.jsx             登录、会话、消息和问答逻辑
-│  │  ├─ App.css             页面视觉样式
-│  │  ├─ index.css           全局基础样式
-│  │  └─ main.jsx            前端入口
-│  ├─ index.html
-│  ├─ package.json
-│  └─ vite.config.js
-├─ backend/                  Node.js + Express 后端
-│  ├─ src/server.js          认证、聊天和持久化接口
-│  ├─ src/providers.js       官方模型供应商适配层
-│  ├─ src/credentials.js     供应商密钥加密与读取
-│  ├─ config/
-│  │  └─ system-prompt.txt   仅后端读取的系统提示词
-│  ├─ .env.example           环境变量模板，不含真实值
-│  ├─ .env                   本机真实配置，不进入 Git
+G:\xiao
+```
+
+前端目录：
+
+```text
+G:\xiao\frontend
+```
+
+后端目录：
+
+```text
+G:\xiao\backend
+```
+
+数据库迁移目录：
+
+```text
+G:\xiao\supabase\migrations
+```
+
+主要文件：
+
+```text
+G:\xiao
+├─ frontend/
+│  ├─ src/App.jsx             前端页面和交互
+│  ├─ src/App.css             前端样式
+│  ├─ vite.config.js          前端配置
 │  └─ package.json
-├─ supabase/
-│  └─ migrations/
-│     ├─ 202609180001_create_sessions_and_messages.sql
-│     ├─ 202609180002_create_settings.sql
-│     ├─ 202609180003_add_multi_provider.sql
-│     └─ 202609180004_add_custom_provider_fields.sql
-├─ .gitignore
+├─ backend/
+│  ├─ src/server.js           后端接口和认证
+│  ├─ src/providers.js        模型供应商适配层
+│  ├─ src/credentials.js      密钥加密和读取
+│  ├─ config/system-prompt.txt 默认系统提示词
+│  ├─ .env.example            环境变量模板
+│  ├─ .env                    本机真实配置，不进入 Git
+│  └─ package.json
+├─ supabase/migrations/       Supabase 数据库迁移
 ├─ CHANGELOG.md
 └─ README.md
 ```
 
-## 数据表
+## 环境变量名称
 
-### `sessions`
+真实值只能写入：
 
-每个会话包含唯一 `id`、所有者 `owner_id`、标题、创建时间和更新时间。
+```text
+G:\xiao\backend\.env
+```
 
-### `messages`
+不要提交 `.env`，不要把真实值发到聊天中。
 
-每条消息包含唯一 `id`、所属 `session_id`、所有者 `owner_id`、角色、正文和创建时间。
+| 变量名 | 用途 |
+|---|---|
+| `PORT` | 后端监听端口 |
+| `MODEL_BASE_URL` | 当前兼容网关的基础地址 |
+| `MODEL_API_KEY` | 当前兼容网关密钥 |
+| `MODEL_NAME` | 当前兼容网关默认模型 ID |
+| `MODEL_SYSTEM_PROMPT_FILE` | 默认系统提示词文件路径 |
+| `MODEL_MAX_TOKENS` | 默认最大回复长度 |
+| `MODEL_TEMPERATURE` | 默认温度 |
+| `SUPABASE_URL` | Supabase 项目地址 |
+| `SUPABASE_PUBLISHABLE_KEY` | Supabase 可公开 Key，仅由后端读取 |
+| `SUPABASE_SECRET_KEY` | Supabase Secret/Service Key，仅由后端读取 |
+| `AUTH_COOKIE_SECURE` | 本地使用 `false`，HTTPS 部署使用 `true` |
+| `CREDENTIAL_ENCRYPTION_KEY` | 加密用户填写的供应商 API Key |
 
-删除会话时，数据库会自动删除该会话下的所有消息。
+环境变量模板文件是：
 
-### `settings`
+```text
+G:\xiao\backend\.env.example
+```
 
-每个用户最多一行设置，包含系统提示词、默认模型名称、最大回复长度、温度和更新时间。
+模板中不包含真实值。
 
-### `provider_credentials`
+## 数据库初始化
 
-保存用户输入的官方或自定义供应商配置，包括加密后的 API Key、随机向量、校验值，以及自定义接口地址和适配器类型。前端不能读取完整 Key。
+### 第一步：创建 Supabase 项目
 
-## Supabase 首次设置
+在 Supabase 官方后台创建项目，并创建你自己的唯一登录用户。
 
-### 第一步：创建项目
+不要使用“秘密网址”作为保护方式。访问权限由 Supabase Auth、RLS 和后端共同控制。
 
-在 Supabase 后台创建一个项目。不要使用“秘密网址”作为保护方式。
+### 第二步：依次执行迁移
 
-### 第二步：执行迁移
-
-打开 Supabase Dashboard 的 SQL Editor，将下面文件中的全部内容复制进去并执行：
+打开 Supabase Dashboard 的 SQL Editor，按文件编号顺序复制每个文件的全部内容并执行。
 
 ```text
 G:\xiao\supabase\migrations\202609180001_create_sessions_and_messages.sql
@@ -116,7 +117,9 @@ G:\xiao\supabase\migrations\202609180003_add_multi_provider.sql
 G:\xiao\supabase\migrations\202609180004_add_custom_provider_fields.sql
 ```
 
-迁移会创建：
+注意：要把文件内容复制进 SQL Editor，不要把文件路径直接粘贴进去。
+
+迁移完成后会建立：
 
 - `public.sessions`
 - `public.messages`
@@ -126,64 +129,17 @@ G:\xiao\supabase\migrations\202609180004_add_custom_provider_fields.sql
 - RLS 策略
 - `authenticated` 角色的最小表权限
 
-### 第三步：创建唯一用户
+### 第三步：关闭公开注册
 
-打开 Supabase Dashboard 的 Authentication：
+进入 `Authentication` → `Users` 创建唯一用户，然后关闭新用户注册。
 
-1. 创建一个你自己的邮箱和密码用户。
-2. 关闭公开注册。
-3. 不创建额外的用户资料表。
+已有用户仍可以登录，但陌生邮箱不能创建新账号。
 
-### 第四步：填写后端环境变量
+## 本地启动
 
-打开：
+前端和后端需要分别在两个 PowerShell 窗口中运行。
 
-```text
-G:\xiao\backend\.env
-```
-
-填写：
-
-```env
-CREDENTIAL_ENCRYPTION_KEY=后端加密主密钥
-SUPABASE_URL=你的项目地址
-SUPABASE_PUBLISHABLE_KEY=你的可公开 Key
-SUPABASE_SECRET_KEY=你的 Secret Key
-MODEL_TEMPERATURE=1
-AUTH_COOKIE_SECURE=false
-```
-
-说明：
-
-- `CREDENTIAL_ENCRYPTION_KEY`：后端生成和保存的加密主密钥，用于加密供应商 API Key。
-- `SUPABASE_URL`：Supabase 项目地址。
-- `SUPABASE_PUBLISHABLE_KEY`：用于后端完成登录验证，属于可公开 Key，但仍然只放在后端。
-- `SUPABASE_SECRET_KEY`：高权限钥匙，只放后端环境变量。
-- `MODEL_TEMPERATURE`：后端默认温度，当前按 Claude 接口使用 `0` 到 `1`。
-- `AUTH_COOKIE_SECURE`：本地 HTTP 使用 `false`；部署到 HTTPS 后改为 `true`。
-
-不要把 Secret Key 发到聊天中，不要写入前端，不要提交到 Git。
-
-## 权限设计
-
-- 浏览器只调用森月居后端。
-- 浏览器不直接读取 `sessions`、`messages`、`settings` 或 `provider_credentials`。
-- Supabase RLS 已开启。
-- 未登录用户没有表权限。
-- 登录用户只能访问 `owner_id` 等于自己用户 ID 的行。
-- `owner_id` 只能由后端从已验证的访问令牌中读取。
-- 普通会话和消息请求使用用户令牌，由 RLS 限制权限。
-- Secret Key 不参与普通聊天请求。
-- `messages` 只允许读取和新增；删除会话时由数据库级联删除消息。
-- `settings` 每个用户最多一行，只能读取和修改自己的设置。
-- `provider_credentials` 只保存加密后的供应商 API Key，后端不回传完整 Key。
-- 数据库没有记忆压缩逻辑，也不保存长期摘要。
-
-## 启动方法
-
-前端和后端分别运行在两个 PowerShell 窗口中。
-
-### 后端
+### 窗口一：后端
 
 ```powershell
 cd G:\xiao\backend
@@ -191,9 +147,17 @@ npm install
 npm run dev
 ```
 
-后端会读取 `backend/.env`，但不会输出 Key。
+正常情况下会显示：
 
-### 前端
+```text
+森月居后端已启动：http://localhost:3000
+模型配置：已就绪
+数据库配置：已就绪
+```
+
+后端只监听本机地址，并自动读取 `G:\xiao\backend\.env`。
+
+### 窗口二：前端
 
 ```powershell
 cd G:\xiao\frontend
@@ -201,41 +165,120 @@ npm install
 npm run dev
 ```
 
-浏览器访问：
+浏览器打开：
 
 [http://localhost:5173](http://localhost:5173)
 
-## 健康检查
+Vite 如果发现 `5173` 端口被占用，会改用其他端口，以终端实际地址为准。
 
-访问：
+## 怎样运行检查
+
+### 1. 健康检查
+
+浏览器打开：
 
 [http://localhost:3000/api/health](http://localhost:3000/api/health)
 
-关键字段：
+重要字段：
 
-- `status`: 应为 `ok`
-- `modelConfigured`: 模型环境变量完整时应为 `true`
-- `databaseConfigured`: Supabase 后端变量完整时应为 `true`
-- `secretKeyConfigured`: Secret Key 已填写时应为 `true`
-- `authRequired`: 应为 `true`
-- `multiProvider`: 应为 `true`
-- `credentialEncryptionConfigured`: 应为 `true`
-- `memoryEnabled`: 应为 `false`
+- `status` 应为 `ok`
+- `modelConfigured` 应为 `true`
+- `databaseConfigured` 应为 `true`
+- `secretKeyConfigured` 应为 `true`
+- `authRequired` 应为 `true`
+- `multiProvider` 应为 `true`
+- `credentialEncryptionConfigured` 应为 `true`
+- `memoryEnabled` 应为 `false`
 
-健康检查不会发起模型请求，也不会产生模型费用。
+也可以在 PowerShell 中运行：
 
-## 持久化验收
+```powershell
+Invoke-RestMethod http://127.0.0.1:3000/api/health
+```
 
-1. 打开 [http://localhost:5173](http://localhost:5173)。
-2. 使用 Supabase 中创建的唯一账号登录。
-3. 点击“新建会话”，确认左侧出现新会话。
-4. 发送一条测试消息，确认枭回复。
-5. 刷新页面，确认会话和两条消息仍然存在。
-6. 点击另一个会话，再点击回来，确认历史消息正确加载。
-7. 删除该会话，确认左侧会话消失。
-8. 再刷新页面，确认被删除的会话没有恢复。
-9. 在设置页连接一个官方供应商，确认能够拉取模型列表。
-10. 选择允许列表中的模型并保存，刷新确认设置仍保留。
-11. 确认页面和数据库中没有记忆压缩或长期摘要。
+健康检查不会调用聊天模型，也不会产生模型费用。
 
-第一次发送消息会调用模型服务，是否产生费用取决于你的模型平台和账户方案。
+### 2. 后端语法检查
+
+```powershell
+cd G:\xiao\backend
+node --check src/server.js
+node --check src/providers.js
+node --check src/credentials.js
+```
+
+三个命令都应没有报错。
+
+### 3. 前端构建检查
+
+```powershell
+cd G:\xiao\frontend
+npm run build
+```
+
+看到 `✓ built` 表示构建通过。
+
+### 4. 手动验收
+
+1. 打开前端并登录。
+2. 新建会话。
+3. 发送消息，确认自己的消息立即出现。
+4. 等待枭的回复。
+5. 刷新页面，确认会话和消息还在。
+6. 重命名会话并刷新，确认名称保留。
+7. 删除会话，确认有二次确认，删除后自动切换或回到欢迎页。
+8. 进入设置页，连接供应商并拉取模型。
+9. 选择模型并保存，刷新后确认设置保留。
+10. 确认第一句话被保存和加载，但第二轮请求没有携带长期历史记忆。
+
+第一次真正发送消息会调用模型服务，可能产生费用。
+
+## 当前已经完成
+
+- React + Vite 前端
+- Node.js + Express 后端
+- 清冷浅灰蓝、蓝粉渐变的界面
+- 单用户登录
+- 会话列表、自动加载和历史切换
+- 新建、重命名和删除会话
+- 删除前二次确认
+- 用户消息立即显示
+- 等待期间禁止重复提交
+- 失败后恢复输入并允许重试
+- 模型回复保存成功后才结束加载
+- 自动滚动和长文本换行
+- Supabase `sessions`、`messages` 和 `settings` 表
+- Supabase `provider_credentials` 加密凭据表
+- RLS 所有者隔离
+- 默认系统提示词、模型、最大回复长度和温度设置
+- OpenAI、Anthropic、DeepSeek 官方适配器
+- 一个自定义第三方 API 地址
+- 自定义 OpenAI 兼容和 Anthropic 兼容格式
+- 官方模型列表拉取和选择
+- 供应商 API Key 使用 AES-256-GCM 加密
+- 自定义地址只允许 HTTPS 公网地址
+- 阻止本机、内网、保留地址和重定向
+
+## 还没有完成
+
+- 流式输出
+- 长期记忆
+- 记忆压缩
+- 多轮历史上下文
+- 多个自定义第三方地址同时保存
+- 多模型自动降级或负载均衡
+- 文件、语音、图片识别
+- 云端部署
+- 多用户开放注册
+- 自动备份和恢复
+
+## 安全约定
+
+- 真实 `.env` 不进入 Git。
+- Supabase Secret Key 只放后端。
+- 模型供应商密钥只放后端 `backend/.env` 或加密后的 `provider_credentials`。
+- 前端不能读取完整供应商 Key。
+- 前端不能直接读取业务表。
+- 前端不能提交任意请求路径，只能提交通过后端允许的供应商和模型 ID。
+- 自定义第三方地址会做 HTTPS 和公网地址检查。
+- 删除会话会删除该会话的全部消息。
